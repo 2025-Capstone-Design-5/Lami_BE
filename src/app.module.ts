@@ -3,12 +3,12 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { TrafficModule } from '@traffic/traffic.module';
-import { AuthModule } from '@auth/auth.module';
-import { UsersModule } from '@users/users.module';
-import { AlertsModule } from '@alerts/alerts.module';
-import { AgentModule } from '@agent/agent.module';
-import { CalendarModule } from '@calendar/calendar.module';
+import { TrafficModule } from '@/traffic/traffic.module';
+import { AuthModule } from '@/auth/auth.module';
+import { UsersModule } from '@/users/users.module';
+import { AlertsModule } from '@/alerts/alerts.module';
+import { AgentModule } from '@/agent/agent.module';
+import { CalendarModule } from '@/calendar/calendar.module';
 
 @Module({
   imports: [

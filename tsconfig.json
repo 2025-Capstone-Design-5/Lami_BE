@@ -18,12 +18,7 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@traffic/*": ["src/traffic/*"],
-      "@calendar/*": ["src/calendar/*"],
-      "@agent/*": ["src/agent/*"],
-      "@alerts/*": ["src/alerts/*"],
-      "@users/*": ["src/users/*"],
-      "@auth/*": ["src/auth/*"]
+      "@/*": ["src/*"]
     }
   }
 }
