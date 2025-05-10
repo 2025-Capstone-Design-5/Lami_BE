@@ -51,7 +51,10 @@ export class TmapService {
         HttpStatus.BAD_REQUEST,
       );
     }
-    if (!coord.lat || !coord.lon) {
+    // lat/lon이 없으면 newLat/newLon을 대체 사용
+    const lat = coord.lat && coord.lat.trim() !== '' ? coord.lat : coord.newLat;
+    const lon = coord.lon && coord.lon.trim() !== '' ? coord.lon : coord.newLon;
+    if (!lat || !lon) {
       throw new HttpException(
         `[TmapService.geocode] 유효한 좌표를 찾을 수 없습니다: ${JSON.stringify(coord)}`,
         HttpStatus.BAD_REQUEST,
@@ -62,8 +65,8 @@ export class TmapService {
         coordType: coord.coordType,
         addressFlag: coord.addressFlag,
         matchFlag: coord.matchFlag,
-        lat: coord.lat,
-        lon: coord.lon,
+        lat,
+        lon,
         city_do: coord.city_do,
         gu_gun: coord.gu_gun,
         eup_myun: coord.eup_myun,

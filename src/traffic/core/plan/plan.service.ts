@@ -63,8 +63,21 @@ export class PlanService {
       // 상세 예외처리: 어떤 로직에서 오류 발생했는지 메시지에 포함
       if (error instanceof HttpException) {
         const resp = error.getResponse();
-        const detail = typeof resp === 'string' ? resp : JSON.stringify(resp);
-        throw new HttpException(`[PlanService.planRoute] ${detail}`, error.getStatus());
+        let message: string;
+        if (typeof resp === 'string') {
+          message = resp;
+        } else if (typeof resp === 'object' && 'message' in resp) {
+          message = Array.isArray((resp as any).message)
+            ? (resp as any).message.join(', ')
+            : (resp as any).message;
+        } else {
+          message = JSON.stringify(resp);
+        }
+        // 중복 prefix 방지
+        if (message.startsWith('[PlanService.planRoute]')) {
+          throw new HttpException(message, error.getStatus());
+        }
+        throw new HttpException(`[PlanService.planRoute] ${message}`, error.getStatus());
       }
       const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
       throw new HttpException(`[PlanService.planRoute] 예기치 못한 오류: ${errMsg}`, HttpStatus.SERVICE_UNAVAILABLE);
