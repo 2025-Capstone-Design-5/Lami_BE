@@ -1,73 +1,95 @@
-# 실시간 음성 인식을 하고 자연어(한국어)로 변환 하는 코드
-# 마이크로부터 음성을 입력받아 Whisper 모델을 사용하여 실시간으로 텍스트로 변환    
-
 import sounddevice as sd
 import numpy as np
 import queue
 from faster_whisper import WhisperModel
+import requests
+from gtts import gTTS
+import os
+import time
 
 # 설정
-SAMPLE_RATE = 16000  # Whisper 모델에 적합한 샘플링 레이트
-BLOCK_SIZE = 1024    # 마이크로부터 읽어오는 블록 크기
+SAMPLE_RATE = 16000
+BLOCK_SIZE = 1024
+BUFFER_DURATION = 5  # 초
+OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "llama3"
 
-# 오디오 데이터를 저장하는 큐
+# 오디오 데이터 저장 큐
 audio_queue = queue.Queue()
 
-# Whisper 모델 로드 (GPU를 사용하는 경우 "cuda"로 설정)
+# Whisper 모델 로딩 (GPU 사용)
 try:
     model = WhisperModel("base", device="cuda")
 except Exception as e:
-    print(f"Error loading Whisper model: {e}")
+    print(f"Whisper 모델 로딩 실패: {e}")
     exit(1)
 
 # 오디오 콜백 함수
-def audio_callback(indata, frames, time, status):
+def audio_callback(indata, frames, time_info, status):
     if status:
-        print(f"Audio status: {status}")
+        print(f"[AUDIO STATUS] {status}")
     audio_queue.put(indata.copy())
 
-# 실시간 음성 인식 함수
-def recognize_from_mic():
-    print("Listening... (Press Ctrl+C to stop)")
+# LLM 서버로 텍스트 전달하고 응답 받기
+def query_ollama(prompt):
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False
+    }
     try:
-        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, callback=audio_callback, blocksize=BLOCK_SIZE) as stream:
+        res = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        res.raise_for_status()
+        return res.json().get("response", "")
+    except Exception as e:
+        print(f"[LLM ERROR] {e}")
+        return "LLM 서버 응답 오류입니다."
+
+# TTS로 응답 읽어주기
+def speak(text, filename="response.mp3"):
+    try:
+        tts = gTTS(text, lang="ko")
+        tts.save(filename)
+        os.system(f"mpg123 {filename}")
+    except Exception as e:
+        print(f"[TTS 오류] {e}")
+
+# 실시간 음성 인식 + LLM 통합 루프
+def recognize_and_chat():
+    print("🎤 실시간 음성 인식 시작 (Ctrl+C로 종료)")
+    try:
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, callback=audio_callback, blocksize=BLOCK_SIZE):
             audio_buffer = []
 
             while True:
-                # 큐에서 오디오 데이터를 읽어옴
                 while not audio_queue.empty():
                     audio_chunk = audio_queue.get()
                     audio_buffer.extend(audio_chunk.flatten().tolist())
 
-                # 오디오 버퍼가 일정 길이를 넘으면 변환 수행
-                if len(audio_buffer) > SAMPLE_RATE * 5:  # 5초 분량
-                    audio_data = np.array(audio_buffer[:SAMPLE_RATE * 5], dtype=np.float32)
-                    audio_buffer = audio_buffer[SAMPLE_RATE * 5:]
+                if len(audio_buffer) > SAMPLE_RATE * BUFFER_DURATION:
+                    audio_data = np.array(audio_buffer[:SAMPLE_RATE * BUFFER_DURATION], dtype=np.float32)
+                    audio_buffer = audio_buffer[SAMPLE_RATE * BUFFER_DURATION:]
 
-                    # 정규화 수행
-                    if np.max(np.abs(audio_data)) > 0:
-                        audio_data = audio_data / np.max(np.abs(audio_data))
-                    else:
-                        print("Warning: Silent audio detected, skipping transcription.")
+                    if np.max(np.abs(audio_data)) == 0:
+                        print("⚠️ 무음 감지: 건너뜀")
                         continue
+                    audio_data /= np.max(np.abs(audio_data))
 
-                    # Whisper 모델로 변환
                     try:
-                        segments, _ = model.transcribe(audio_data, beam_size=5, temperature=0.2)
+                        segments, _ = model.transcribe(audio_data, beam_size=5, temperature=0.2, language="ko")
                         for segment in segments:
-                            print(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")
+                            user_input = segment.text.strip()
+                            print(f"👤 사용자: {user_input}")
+                            if user_input:
+                                llm_response = query_ollama(user_input)
+                                print(f"🤖 LLM: {llm_response}")
+                                speak(llm_response)
                     except Exception as e:
-                        print(f"Error during transcription: {e}")
-
+                        print(f"[Whisper 변환 오류] {e}")
     except KeyboardInterrupt:
-        print("Stopped listening.")
-    except sd.PortAudioError as e:
-        print(f"Audio Error: {e}")
+        print("\n🛑 인식 중단됨")
     except Exception as e:
-        print(f"Unexpected Error: {e}")
+        print(f"[오류] {e}")
 
 if __name__ == "__main__":
-    try:
-        recognize_from_mic()
-    except Exception as e:
-        print(f"Failed to start recognition: {e}")
+    recognize_and_chat()
