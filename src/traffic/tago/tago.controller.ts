@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { TagoService } from './tago.service';
 
 @Controller('tago')
