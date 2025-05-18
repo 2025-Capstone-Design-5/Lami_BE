@@ -1,6 +1,9 @@
 name: CI – Build & Push Docker Image
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
+  checks: write
   packages: write
 
 on:
