@@ -11,7 +11,7 @@ import time
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 1024
 BUFFER_DURATION = 5  # 초
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = "http://121.156.245.38:11434/api/generate"
 OLLAMA_MODEL = "llama3"
 
 # 오디오 데이터 저장 큐
@@ -19,7 +19,7 @@ audio_queue = queue.Queue()
 
 # Whisper 모델 로딩 (GPU 사용)
 try:
-    model = WhisperModel("base", device="cuda")
+    model = WhisperModel("base", device="cpu")
 except Exception as e:
     print(f"Whisper 모델 로딩 실패: {e}")
     exit(1)
@@ -31,19 +31,22 @@ def audio_callback(indata, frames, time_info, status):
     audio_queue.put(indata.copy())
 
 # LLM 서버로 텍스트 전달하고 응답 받기
+
 def query_ollama(prompt):
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False
-    }
     try:
-        res = requests.post(OLLAMA_URL, json=payload, timeout=60)
-        res.raise_for_status()
-        return res.json().get("response", "")
+        response = requests.post("http://121.156.245.38:11434/api/generate", json={
+            "model": "llama3",  # 실제 사용 중인 모델 이름 입력
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "stream": False
+        })
+        response.raise_for_status()
+        return response.json()["message"]["content"]
     except Exception as e:
         print(f"[LLM ERROR] {e}")
         return "LLM 서버 응답 오류입니다."
+
 
 # TTS로 응답 읽어주기
 def speak(text, filename="response.mp3"):
@@ -93,3 +96,5 @@ def recognize_and_chat():
 
 if __name__ == "__main__":
     recognize_and_chat()
+
+
