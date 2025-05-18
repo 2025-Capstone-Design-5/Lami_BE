@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { TmapService } from '../tmap/tmap.service';
 import { TagoService } from '../tago/tago.service';
 import { RoutesResponseDto, RouteDto } from './dto/route-info.dto';
+import { OtpPlanResponse, OtpPlan, Itinerary, Leg } from './interfaces/otp.interfaces';
 
 @Injectable()
 export class RoutesService {
@@ -13,7 +14,7 @@ export class RoutesService {
     private readonly tagoService: TagoService,
   ) {}
 
-  async getOtpRoutes(fromAddress: string, toAddress: string): Promise<any> {
+  async getOtpRoutes(fromAddress: string, toAddress: string): Promise<OtpPlan> {
     // 1) 주소 -> 좌표 변환 via TmapService (수정된 geocode 함수 사용)
     const fromGeoRes = await this.tmapService.geocode(fromAddress);
     const { lat: fromLat, lon: fromLon } = fromGeoRes.coordinateInfo;
@@ -31,9 +32,9 @@ export class RoutesService {
     };
     console.log(`[RoutesService] Calling OTP URL: ${url}`, params);
     const response = await firstValueFrom(
-      this.httpService.get<any>(url, { params }),
+      this.httpService.get<OtpPlanResponse>(url, { params }),
     );
-    console.log('[RoutesService] OTP raw response:', response.data);
+    console.log('[RoutesService] OTP raw response:', response.data.plan);
     return response.data.plan;
   }
 
@@ -58,17 +59,17 @@ export class RoutesService {
    */
   async getAllRoutes(fromAddress: string, toAddress: string): Promise<RoutesResponseDto> {
     const data = await this.getOtpRoutes(fromAddress, toAddress);
-    const itineraries = data.itineraries || [];
+    const itineraries: Itinerary[] = data.itineraries ?? [];
     // duration 기준 사전 정렬 후 상위 3개(best) 및 최하위 1개(worst) 선별
-    const sortedItins = [...itineraries].sort((a: any, b: any) => a.duration - b.duration);
+    const sortedItins = [...itineraries].sort((a, b) => a.duration - b.duration);
     const bestItins = sortedItins.slice(0, 3);
     const worstItin = sortedItins[sortedItins.length - 1];
     const selectedItins = [...bestItins];
     if (!bestItins.includes(worstItin)) selectedItins.push(worstItin);
     // 최종 선택된 Itinerary에 대해 static + realtime 처리 병렬화
     const routes = await Promise.all(
-      selectedItins.map(async (itin: any) => {
-        const legs = itin.legs || [];
+      selectedItins.map(async (itin: Itinerary) => {
+        const legs: Leg[] = itin.legs ?? [];
         const duration = itin.duration;
         // 모드별 duration 그룹핑
         const walkDurations: number[] = [];
@@ -86,31 +87,36 @@ export class RoutesService {
         }
         // stops 및 transfers 수집
         const stops: string[] = [];
-        const transitLegs = legs.filter((l: any) => l.transitLeg && l.routeShortName);
+        const transitLegs: Leg[] = legs.filter(l => l.transitLeg && !!l.routeShortName);
         const transfers: any[] = [];
+        const now = Date.now();
         for (let i = 1; i < transitLegs.length; i++) {
           const prev = transitLegs[i - 1];
           const curr = transitLegs[i];
           if (!curr.interlineWithPreviousLeg) {
+            const departure = curr.from.departure ?? curr.startTime ?? now;
+            const previousArrival = prev.to.arrival ?? prev.to.endTime ?? now;
             transfers.push({
               stationName: curr.from.name,
               fromRoute: prev.routeShortName,
               toRoute: curr.routeShortName,
-              departureTime: curr.from.departure ?? curr.startTime,
-              waitTime: ((curr.from.departure ?? curr.startTime) - (prev.to.arrival ?? prev.endTime)) / 1000,
+              departureTime: departure,
+              waitTime: (departure - previousArrival) / 1000,
             });
           }
         }
-        transitLegs.forEach((leg: any) => leg.from?.name && stops.push(leg.from.name));
+        transitLegs.forEach((leg: Leg) => leg.from?.name && stops.push(leg.from.name));
         if (transitLegs.length) stops.push(transitLegs[transitLegs.length - 1].to.name);
         // 실시간 도착 예상 시간 조회
-        const now = Date.now();
-        const realtimeArrivalTimes = await Promise.all(
-          transitLegs.map(async (leg: any) => {
-            if (leg.mode === 'SUBWAY') return Math.max(0, Math.floor((leg.startTime - now) / 1000));
+        const realtimeArrivalTimes: (number | null)[] = await Promise.all(
+          transitLegs.map(async (leg: Leg) => {
+            if (leg.mode === 'SUBWAY') {
+              const start = leg.startTime ?? now;
+              return Math.max(0, Math.floor((start - now) / 1000));
+            }
             try {
-              const nodeId = leg.from.stopId.split('TAGO_')[1];
-              const routeId = leg.routeId.split('TAGO_')[1];
+              const nodeId = leg.from.stopId?.split('TAGO_')[1] ?? '';
+              const routeId = leg.routeId?.split('TAGO_')[1] ?? '';
               const cityCode = await this.tagoService.getCityCodeFromBusStop(
                 leg.from.lat.toString(),
                 leg.from.lon.toString(),
@@ -129,26 +135,26 @@ export class RoutesService {
           }),
         );
         // Main/Sub 조합
-        const main: any = {
+        const main = {
           origin: fromAddress,
           destination: toAddress,
           stops,
           duration,
           walkDurations,
           transitDurations,
-          routeShortNames: transitLegs.map((l: any) => l.routeShortName),
-          modes: legs.map((l: any) => l.mode),
+          routeShortNames: transitLegs.map((l: Leg) => l.routeShortName),
+          modes: legs.map((l: Leg) => l.mode),
           transferCount: transfers.length,
           transfers,
           realtimeArrivalTimes,
         };
-        const sub = legs.map((l: any) => ({
+        const sub = legs.map(l => ({
           mode: l.mode,
           transitLeg: l.transitLeg,
           from: l.from,
           to: l.to,
-          legGeometry: l.legGeometry,
-          steps: l.steps,
+          legGeometry: l.legGeometry as unknown,
+          steps: l.steps as unknown[],
         }));
         return { main, sub };
       }),
