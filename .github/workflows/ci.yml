@@ -78,7 +78,7 @@ jobs:
             const passed = process.env.PASSED;
             const failed = process.env.FAILED;
             const skipped = process.env.SKIPPED;
-            await github.checks.create({
+            await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               name: 'Test Results',
