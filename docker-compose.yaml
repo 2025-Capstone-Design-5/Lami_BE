@@ -1,4 +1,3 @@
-
 services:
   db:
     image: postgres:14
@@ -28,8 +27,14 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_DATABASE: ${DB_DATABASE}
       OTP_URL: http://host.docker.internal:8080
+      TZ: Asia/Seoul
     ports:
       - '3000:3000'
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /etc/localtime:/etc/localtime:ro
+    command: npm run start:dev
     depends_on:
       - db
 

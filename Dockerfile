@@ -12,6 +12,10 @@ RUN npm run build
 
 # Stage 2: Production 단계
 FROM node:18-alpine
+# timezone 설정
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Seoul
+RUN cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime && echo "Asia/Seoul" > /etc/timezone
 WORKDIR /app
 
 # 빌드 아티팩트와 의존성 복사
