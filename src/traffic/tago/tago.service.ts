@@ -46,18 +46,21 @@ export class TagoService {
   async getRealtimeBusArrivals(
     cityCode: string,
     nodeId: string,
+    routeId: string,
     pageNo: number = 1,
-    numOfRows: number = 10
+    numOfRows: number = 10,
+    type: 'xml' | 'json' = 'json'
   ): Promise<any> {
-    const url = 'http://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList';
+    const url = 'http://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoSpcifyRouteBusArvlPrearngeInfoList';
     const params: AxiosRequestConfig = {
       params: {
         serviceKey: process.env.TAGO_API_KEY!,
         pageNo: pageNo.toString(),
         numOfRows: numOfRows.toString(),
-        _type: 'json',
+        _type: type,
         cityCode,
         nodeId,
+        routeId,
       },
     };
     return firstValueFrom(this.httpService.get(url, params));

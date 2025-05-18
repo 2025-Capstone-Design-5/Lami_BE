@@ -28,9 +28,10 @@ export class TagoController {
   @Get('realtime')
   async getRealtimeArrivals(
     @Query('cityCode') cityCode: string,
-    @Query('nodeId') nodeId: string
+    @Query('nodeId') nodeId: string,
+    @Query('routeId') routeId: string
   ): Promise<any> {
-    const response = await this.tagoService.getRealtimeBusArrivals(cityCode, nodeId);
+    const response = await this.tagoService.getRealtimeBusArrivals(cityCode, nodeId, routeId);
     return response.data;
   }
 }
