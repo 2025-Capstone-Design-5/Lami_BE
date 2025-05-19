@@ -12,7 +12,7 @@ audio_queue = queue.Queue()
 
 # Whisper 모델 로드 (GPU를 사용하는 경우 "cuda"로 설정)
 try:
-    model = WhisperModel("base", device="cuda")
+    model = WhisperModel("medium", device="cuda")
 except Exception as e:
     print(f"Error loading Whisper model: {e}")
     exit(1)
@@ -50,7 +50,7 @@ def recognize_from_mic():
 
                     # Whisper 모델로 변환
                     try:
-                        segments, _ = model.transcribe(audio_data, beam_size=5, temperature=0.2)
+                        segments, _ = model.transcribe(audio_data, beam_size=5, temperature=0.2, language="ko")
                         for segment in segments:
                             print(f"[{segment.start:.2f}s -> {segment.end:.2f}s] {segment.text}")
                     except Exception as e:
@@ -67,4 +67,5 @@ if __name__ == "__main__":
     try:
         recognize_from_mic()
     except Exception as e:
+
         print(f"Failed to start recognition: {e}")
