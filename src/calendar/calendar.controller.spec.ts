@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CalendarController } from './calendar.controller';
+import { CalendarService } from './calendar.service'; // 서비스 import
 
 describe('CalendarController', () => {
   let controller: CalendarController;
