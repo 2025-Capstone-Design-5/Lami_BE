@@ -12,4 +12,12 @@ export class DebugRoutesController {
   ): Promise<any> {
     return this.routesService.getOtpRoutes(from, to);
   }
+
+  @Post('optimal')
+  async getOptimalOtpRoute(
+    @Body('from') from: string,
+    @Body('to') to: string
+  ): Promise<any> {
+    return this.routesService.getOptimalOtpRoute(from, to);
+  }
 } 
