@@ -7,9 +7,9 @@ export class CalendarService {
   private oAuth2Client: OAuth2Client;
   
   constructor() {
-    const clientId = 'YOUR_CLIENT_ID';
-    const clientSecret = 'YOUR_CLIENT_SECRET';
-    const redirectUri = 'http://localhost:3000/calendar/oauth2callback';
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI_CALENDAR;
     
     this.oAuth2Client = new OAuth2Client(clientId, clientSecret, redirectUri);
   }
