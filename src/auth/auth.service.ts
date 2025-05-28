@@ -7,9 +7,9 @@ export class AuthService {
   private oAuth2Client: OAuth2Client;
 
   constructor() {
-    const clientId = 'YOUR_CLIENT_ID'; // Google OAuth2 클라이언트 ID
-    const clientSecret = 'YOUR_CLIENT_SECRET'; // Google OAuth2 클라이언트 Secret
-    const redirectUri = 'http://localhost:3000/auth/google/callback'; // 인증 후 리다이렉트 URI
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI_AUTH;
 
     this.oAuth2Client = new OAuth2Client(clientId, clientSecret, redirectUri);
   }
