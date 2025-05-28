@@ -53,6 +53,8 @@ export class RoutesService {
       maxTransfers: options?.maxTransfers ?? 3,
       // 경로 최적화 기준 (QUICK, TRANSFERS, TRIANGLE 등)
       optimize: options?.optimize ?? 'TRIANGLE',
+
+      showIntermediateStops: true,
     };
     console.log(`[RoutesService] Calling OTP URL: ${url}`, params);
     const response = await firstValueFrom(
