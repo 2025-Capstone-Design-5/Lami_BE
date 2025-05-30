@@ -28,6 +28,9 @@ export class RoutesService {
       maxWalkDistance?: number;
       maxTransfers?: number;
       optimize?: string;
+      date?: string;
+      time?: string;
+      arriveBy?: boolean;
     },
   ): Promise<OtpPlan> {
     // 1) 주소 -> 좌표 변환 via TmapService (수정된 geocode 함수 사용)
@@ -56,6 +59,22 @@ export class RoutesService {
 
       showIntermediateStops: true,
     };
+    // mode, transitModes에 공백 포함 시 정리 (예: 'WALK, TRANSIT' -> 'WALK,TRANSIT')
+    if (typeof params.mode === 'string') {
+      params.mode = params.mode.split(',').map(s => s.trim()).join(',');
+    }
+    if (typeof params.transitModes === 'string') {
+      params.transitModes = params.transitModes.split(',').map(s => s.trim()).join(',');
+    }
+    if (options?.date) {
+      params.date = options.date;
+    }
+    if (options?.time) {
+      params.time = options.time;
+    }
+    if (options?.arriveBy !== undefined) {
+      params.arriveBy = options.arriveBy;
+    }
     console.log(`[RoutesService] Calling OTP URL: ${url}`, params);
     const response = await firstValueFrom(
       this.httpService.get<OtpPlanResponse>(url, { params }),
@@ -66,18 +85,39 @@ export class RoutesService {
   /**
    * 모든 경로를 조회하여 필요한 정보만 반환
    */
-  async getAllRoutes(fromAddress: string, toAddress: string): Promise<AllRoutesDataDto> {
+  async getAllRoutes(
+    fromAddress: string,
+    toAddress: string,
+    options?: { date?: string; time?: string; arriveBy?: boolean },
+  ): Promise<AllRoutesDataDto> {
     // 1) 순수 도보, 대중교통, 자동차 경로 병렬 조회
     const [walkPlan, transitPlan, carPlan] = await Promise.all([
-      this.getOtpRoutes(fromAddress, toAddress, { mode: 'WALK', numItineraries: 1, optimize: 'QUICK' }),
+      this.getOtpRoutes(fromAddress, toAddress, {
+        mode: 'WALK',
+        numItineraries: 1,
+        optimize: 'QUICK',
+        date: options?.date,
+        time: options?.time,
+        arriveBy: options?.arriveBy,
+      }),
       this.getOtpRoutes(fromAddress, toAddress, {
         mode: 'TRANSIT,WALK',
         transitModes: 'BUS,SUBWAY',
         numItineraries: 3,
         optimize: 'QUICK',
         maxPreTransitTime: 1200,
+        date: options?.date,
+        time: options?.time,
+        arriveBy: options?.arriveBy,
       }),
-      this.getOtpRoutes(fromAddress, toAddress, { mode: 'CAR', numItineraries: 1, optimize: 'QUICK' }),
+      this.getOtpRoutes(fromAddress, toAddress, {
+        mode: 'CAR',
+        numItineraries: 1,
+        optimize: 'QUICK',
+        date: options?.date,
+        time: options?.time,
+        arriveBy: options?.arriveBy,
+      }),
     ]);
     const walkRoutes = walkPlan.itineraries;
     // transitLeg 기반 필터링으로 대중교통 경로만 추출
