@@ -15,6 +15,11 @@ export class RoutesController {
     const data = await this.routesService.getAllRoutes(
       dto.fromAddress,
       dto.toAddress,
+      {
+        date: dto.date,
+        time: dto.time,
+        arriveBy: dto.arriveBy,
+      },
     );
     return plainToInstance(AllRoutesDataDto, data);
   }
