@@ -9,6 +9,8 @@ import { UsersModule } from './users/users.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AgentModule } from './agent/agent.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { LlmModule } from './llm/llm.module';
+import { VoiceModule } from './voice/voice.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { CalendarModule } from './calendar/calendar.module';
       synchronize: true, // 개발 환경에서만 true로 설정
     }),
     // Application Modules
+    VoiceModule,
+    LlmModule,
     TrafficModule,
     CalendarModule,
     AgentModule,
