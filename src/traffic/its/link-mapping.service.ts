@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Feature } from 'geojson';
-import RBush from 'rbush';
+import * as RBush from 'rbush';
 import * as JSONStream from 'jsonstream';
 import { bbox } from '@turf/bbox';
 
