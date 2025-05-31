@@ -69,8 +69,8 @@ export class ItsController {
     const coords: { lon: number; lat: number }[] = [];
     for (const itin of plan.itineraries) {
       for (const leg of itin.legs) {
-        // 오직 transitLeg(버스/지하철) 경로만 처리
-        if (!leg.transitLeg) continue;
+        // 오직 버스/TRAM 경로만 처리
+        if (!leg.transitLeg || (leg.mode !== 'BUS' && leg.mode !== 'TRAM')) continue;
         const pts = (leg as any).legGeometry?.points;
         if (pts) {
           coords.push(...polyline.decode(pts).map(([lat, lon]) => ({ lon, lat })));
@@ -126,21 +126,21 @@ export class ItsController {
       const boundingCoords = stops.length > 0
         ? stops.map(s => ({ lon: s.lon, lat: s.lat }))
         : itinCoords;
+      // ItsController 원본 Bounding Box 계산
       const lonsI = boundingCoords.map(p => p.lon);
       const latsI = boundingCoords.map(p => p.lat);
-      const paramsI = {
-        type: 'all',
-        getType: 'json' as 'json',
-        minX: Math.min(...lonsI) - r,
-        maxX: Math.max(...lonsI) + r,
-        minY: Math.min(...latsI) - r,
-        maxY: Math.max(...latsI) + r,
-      };
+      const minX = Math.min(...lonsI) - r;
+      const maxX = Math.max(...lonsI) + r;
+      const minY = Math.min(...latsI) - r;
+      const maxY = Math.max(...latsI) + r;
+      const paramsI = { type: 'all' as const, getType: 'json' as const, minX, maxX, minY, maxY };
       console.log(`[getTrafficByRoute] Itin ${idx+1} bounding box: ${JSON.stringify(paramsI)}`);
       const resI = await this.itsService.getRealtimeTrafficInfo(paramsI);
+      console.log(`[getTrafficByRoute] Raw ITS response for Itin ${idx+1}:`, resI);
       const bodyI = resI?.response?.body ?? resI?.body;
       const rawItemsI = bodyI?.items?.item ?? bodyI?.items ?? [];
       const itemsI = Array.isArray(rawItemsI) ? rawItemsI : [rawItemsI];
+      console.log(`[getTrafficByRoute] Parsed ITS items for Itin ${idx+1}:`, itemsI);
       const foundIdsI: string[] = [];
       for (const item of itemsI) {
         if (linkIdSet.has(item.linkId)) {
