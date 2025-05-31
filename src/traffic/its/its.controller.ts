@@ -17,7 +17,8 @@ export class ItsController {
 
   @Post('by-route')
   async getTrafficByRoute(
-    @Body() body: {
+    @Body()
+    body: {
       from: string;
       to: string;
       date?: string;
@@ -31,7 +32,7 @@ export class ItsController {
       maxWalkDistance?: number;
       maxTransfers?: number;
       optimize?: string;
-    }
+    },
   ): Promise<{ totalCount: number; items: any[]; itineraries: any[] }> {
     // 1) OTP 경로 조회
     const {
@@ -61,25 +62,35 @@ export class ItsController {
       time,
       arriveBy,
     });
-    console.log(`[getTrafficByRoute] OTP itineraries count: ${plan.itineraries.length}`, plan.itineraries);
+    console.log(
+      `[getTrafficByRoute] OTP itineraries count: ${plan.itineraries.length}`,
+      plan.itineraries,
+    );
     const coords: { lon: number; lat: number }[] = [];
     for (const itin of plan.itineraries) {
       for (const leg of itin.legs) {
         // 오직 버스/TRAM 경로만 처리
-        if (!leg.transitLeg || (leg.mode !== 'BUS' && leg.mode !== 'TRAM')) continue;
+        if (!leg.transitLeg || (leg.mode !== 'BUS' && leg.mode !== 'TRAM'))
+          continue;
         const pts = (leg as any).legGeometry?.points;
         if (pts) {
-          coords.push(...polyline.decode(pts).map(([lat, lon]) => ({ lon, lat })));
+          coords.push(
+            ...polyline.decode(pts).map(([lat, lon]) => ({ lon, lat })),
+          );
         }
       }
     }
-    console.log(`[getTrafficByRoute] extracted transit coords count: ${coords.length}`);
+    console.log(
+      `[getTrafficByRoute] extracted transit coords count: ${coords.length}`,
+    );
 
     // 2) linkId 집합 생성
     const linkIdSet = new Set<string>();
     coords.forEach(({ lon, lat }) => {
       const id = this.mapper.findLinkId(lon, lat);
-      console.log(`[getTrafficByRoute] coord lon:${lon}, lat:${lat} -> linkId:${id}`);
+      console.log(
+        `[getTrafficByRoute] coord lon:${lon}, lat:${lat} -> linkId:${id}`,
+      );
       if (id) linkIdSet.add(id);
     });
     // 링크 ID가 없으면 결과 없음
@@ -94,49 +105,71 @@ export class ItsController {
     for (let idx = 0; idx < plan.itineraries.length; idx++) {
       const itin = plan.itineraries[idx];
       // Itinerary 버스 경유 정류소 목록 및 stop->linkId 매핑 (intermediateStops 사용)
-      const transitLegs = itin.legs.filter(l => l.transitLeg);
+      const transitLegs = itin.legs.filter((l) => l.transitLeg);
       // transit 경로만 처리, 도보 전용은 건너뜀
       if (transitLegs.length === 0) continue;
-      const stops = transitLegs.flatMap(l => {
+      const stops = transitLegs.flatMap((l) => {
         const inter: Array<any> = (l as any).intermediateStops ?? [];
         return inter.length > 0
           ? inter
           : [{ name: l.from.name, lat: l.from.lat, lon: l.from.lon }];
       });
-      const stopNames = stops.map(s => s.name);
-      console.log(`[getTrafficByRoute] Itin ${idx+1} stops: ${stopNames.join(', ')}`);
-      const stopMappings = stops.map(s => {
+      const stopNames = stops.map((s) => s.name);
+      console.log(
+        `[getTrafficByRoute] Itin ${idx + 1} stops: ${stopNames.join(', ')}`,
+      );
+      const stopMappings = stops.map((s) => {
         const id = this.mapper.findLinkId(s.lon, s.lat);
         return `${s.name}(${id ?? 'null'})`;
       });
-      console.log(`[getTrafficByRoute] Itin ${idx+1} stop->linkId: ${stopMappings.join(' - ')}`);
+      console.log(
+        `[getTrafficByRoute] Itin ${idx + 1} stop->linkId: ${stopMappings.join(' - ')}`,
+      );
       // 이터너러리별 경로 좌표 추출
       const itinCoords: { lon: number; lat: number }[] = [];
       for (const leg of itin.legs) {
         const pts = (leg as any).legGeometry?.points;
         if (pts) {
-          itinCoords.push(...polyline.decode(pts).map(([lat, lon]) => ({ lon, lat })));
+          itinCoords.push(
+            ...polyline.decode(pts).map(([lat, lon]) => ({ lon, lat })),
+          );
         }
       }
       // 버스 경유 정류소가 있으면 해당 좌표로, 없으면 전체 경로 coords로 박스 계산
-      const boundingCoords = stops.length > 0
-        ? stops.map(s => ({ lon: s.lon, lat: s.lat }))
-        : itinCoords;
+      const boundingCoords =
+        stops.length > 0
+          ? stops.map((s) => ({ lon: s.lon, lat: s.lat }))
+          : itinCoords;
       // ItsController 원본 Bounding Box 계산
-      const lonsI = boundingCoords.map(p => p.lon);
-      const latsI = boundingCoords.map(p => p.lat);
+      const lonsI = boundingCoords.map((p) => p.lon);
+      const latsI = boundingCoords.map((p) => p.lat);
       const minX = Math.min(...lonsI) - r;
       const maxX = Math.max(...lonsI) + r;
       const minY = Math.min(...latsI) - r;
       const maxY = Math.max(...latsI) + r;
-      const paramsI = { type: 'all' as const, getType: 'json' as const, minX, maxX, minY, maxY };
-      console.log(`[getTrafficByRoute] Itin ${idx+1} bounding box: ${JSON.stringify(paramsI)}`);
+      const paramsI = {
+        type: 'all' as const,
+        getType: 'json' as const,
+        minX,
+        maxX,
+        minY,
+        maxY,
+      };
+      console.log(
+        `[getTrafficByRoute] Itin ${idx + 1} bounding box: ${JSON.stringify(paramsI)}`,
+      );
       const resI = await this.itsService.getRealtimeTrafficInfo(paramsI);
-      console.log(`[getTrafficByRoute] Raw ITS response for Itin ${idx+1}:`, resI);
+      console.log(
+        `[getTrafficByRoute] Raw ITS response for Itin ${idx + 1}:`,
+        resI,
+      );
       const bodyI = resI?.response?.body ?? resI?.body;
       const rawItemsI = bodyI?.items?.item ?? bodyI?.items ?? [];
       const itemsI = Array.isArray(rawItemsI) ? rawItemsI : [rawItemsI];
-      console.log(`[getTrafficByRoute] Parsed ITS items for Itin ${idx+1}:`, itemsI);
+      console.log(
+        `[getTrafficByRoute] Parsed ITS items for Itin ${idx + 1}:`,
+        itemsI,
+      );
       const foundIdsI: string[] = [];
       for (const item of itemsI) {
         if (linkIdSet.has(item.linkId)) {
@@ -144,8 +177,12 @@ export class ItsController {
           foundIdsI.push(item.linkId);
         }
       }
-      console.log(`[getTrafficByRoute] Itin ${idx+1} matched linkIds: ${foundIdsI.join(', ')}`);
-      const matchedItemsI = itemsI.filter(item => foundIdsI.includes(item.linkId));
+      console.log(
+        `[getTrafficByRoute] Itin ${idx + 1} matched linkIds: ${foundIdsI.join(', ')}`,
+      );
+      const matchedItemsI = itemsI.filter((item) =>
+        foundIdsI.includes(item.linkId),
+      );
       itineraryResults.push({
         itineraryIndex: idx + 1,
         stops: stopNames,
@@ -154,20 +191,22 @@ export class ItsController {
       });
     }
     const finalItems = Array.from(itemMap.values());
-    return { totalCount: finalItems.length, items: finalItems, itineraries: itineraryResults };
+    return {
+      totalCount: finalItems.length,
+      items: finalItems,
+      itineraries: itineraryResults,
+    };
   }
 
   @Post('realtime')
-  async getRealtimeByAddress(
-    @Body('address') address: string,
-  ) {
+  async getRealtimeByAddress(@Body('address') address: string) {
     const geo = await this.tmap.geocode(address);
     const lat = parseFloat(geo.coordinateInfo.lat);
     const lon = parseFloat(geo.coordinateInfo.lon);
     const buffer = 0.001;
     const params = {
       type: 'all',
-      getType: 'json' as 'json',
+      getType: 'json' as const,
       minX: lon - buffer,
       maxX: lon + buffer,
       minY: lat - buffer,
@@ -192,43 +231,69 @@ export class ItsController {
     }
     // linkId -> sectionId 매핑 및 섹션별 linkIds 그룹화
     console.log(`[getForecast] received linkIds: ${linkIds.join(', ')}`);
-    console.log(`[getForecast] parameters fCastDate=${fCastDate}, fCastHour=${fCastHour}, getType=${getType}`);
+    console.log(
+      `[getForecast] parameters fCastDate=${fCastDate}, fCastHour=${fCastHour}, getType=${getType}`,
+    );
     const linkIdsBySection: Record<string, string[]> = {};
     for (const linkId of linkIds) {
       // linkId -> sectionId 매핑 (always use SECTION_INFO based on reverse geocode)
       let sid: string | null = null;
-        const coord = this.mapper.getCoordinatesByLinkId(linkId);
-        if (coord) {
-          const rev = await this.tmap.reverseGeocode(coord.lat.toString(), coord.lon.toString());
-          const city = rev.coordinateInfo.city_do;
-          const gu = rev.coordinateInfo.gu_gun;
-          sid = Object.entries(SECTION_INFO)
-          .find(([sec, infos]) => infos.some(info => info.sido.trim() === city.trim() && info.sigungu.trim() === gu.trim()))?.[0] ?? null;
-        console.log(`[getForecast] linkId ${linkId} reverse geocode -> ${city} ${gu} -> sectionId ${sid}`);
+      const coord = this.mapper.getCoordinatesByLinkId(linkId);
+      if (coord) {
+        const rev = await this.tmap.reverseGeocode(
+          coord.lat.toString(),
+          coord.lon.toString(),
+        );
+        const city = rev.coordinateInfo.city_do;
+        const gu = rev.coordinateInfo.gu_gun;
+        sid =
+          Object.entries(SECTION_INFO).find(([, infos]) =>
+            infos.some(
+              (info) =>
+                info.sido.trim() === city.trim() &&
+                info.sigungu.trim() === gu.trim(),
+            ),
+          )?.[0] ?? null;
+        console.log(
+          `[getForecast] linkId ${linkId} reverse geocode -> ${city} ${gu} -> sectionId ${sid}`,
+        );
       } else {
-        console.log(`[getForecast] linkId ${linkId} has no coordinates, cannot map section`);
+        console.log(
+          `[getForecast] linkId ${linkId} has no coordinates, cannot map section`,
+        );
       }
-     
+
       if (!sid) {
         continue;
       }
-     
+
       if (!linkIdsBySection[sid]) linkIdsBySection[sid] = [];
       linkIdsBySection[sid].push(linkId);
     }
     const uniqueSectionIds = Object.keys(linkIdsBySection);
-    console.log(`[getForecast] filtered valid sectionIds: ${uniqueSectionIds.join(', ')}`);
+    console.log(
+      `[getForecast] filtered valid sectionIds: ${uniqueSectionIds.join(', ')}`,
+    );
     if (uniqueSectionIds.length === 0) {
       throw new BadRequestException('유효한 sectionId가 없습니다');
     }
     // 각 sectionId별 예측정보 호출 및 linkId 필터링 (순차 호출)
     const result: Record<string, any> = {};
     for (const sectionId of uniqueSectionIds) {
-      console.log(`[getForecast] calling itsService.getForecastInfo for sectionId=${sectionId}`);
-      const resp = await this.itsService.getForecastInfo({ sectionId, fCastDate, fCastHour, getType });
+      console.log(
+        `[getForecast] calling itsService.getForecastInfo for sectionId=${sectionId}`,
+      );
+      const resp = await this.itsService.getForecastInfo({
+        sectionId,
+        fCastDate,
+        fCastHour,
+        getType,
+      });
       // 응답 내 items를 요청한 linkIds로 필터링
       if (resp.body && Array.isArray(resp.body.items)) {
-        const filtered = resp.body.items.filter(item => linkIdsBySection[sectionId].includes(item.linkId));
+        const filtered = resp.body.items.filter((item) =>
+          linkIdsBySection[sectionId].includes(item.linkId),
+        );
         resp.body.items = filtered;
         resp.body.totalCount = filtered.length;
       }
@@ -247,6 +312,11 @@ export class ItsController {
     @Body('fCastHour') fCastHour: string,
     @Body('getType') getType: 'json' | 'xml' = 'json',
   ): Promise<any> {
-    return this.itsService.getForecastInfo({ sectionId, fCastDate, fCastHour, getType });
+    return this.itsService.getForecastInfo({
+      sectionId,
+      fCastDate,
+      fCastHour,
+      getType,
+    });
   }
-} 
+}

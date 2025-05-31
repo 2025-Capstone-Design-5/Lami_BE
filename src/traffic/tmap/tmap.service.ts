@@ -1,7 +1,10 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { TmapGeocodingResponse, TmapRouteResponse } from './interfaces/tmap.interfaces';
+import {
+  TmapGeocodingResponse,
+  TmapRouteResponse,
+} from './interfaces/tmap.interfaces';
 
 @Injectable()
 export class TmapService {
@@ -13,10 +16,12 @@ export class TmapService {
     const query = {
       city_do: parts[0] || '',
       gu_gun: parts[1] || '',
-      dong: parts.slice(2).join(' ') || ''
+      dong: parts.slice(2).join(' ') || '',
     };
-    
-    const url = process.env.GEOCODING_URL || 'https://apis.openapi.sk.com/tmap/geo/geocoding';
+
+    const url =
+      process.env.GEOCODING_URL ||
+      'https://apis.openapi.sk.com/tmap/geo/geocoding';
     const params: any = {
       version: '1',
       city_do: query.city_do,
@@ -30,16 +35,17 @@ export class TmapService {
     console.log('[TmapService] 요청 파라미터:', params);
     let rawData: any;
     try {
-    const response = await firstValueFrom(
-      this.httpService.get<any>(url, {
-        params,
-        headers: { Accept: 'application/json' },
-      }),
-    );
+      const response = await firstValueFrom(
+        this.httpService.get<any>(url, {
+          params,
+          headers: { Accept: 'application/json' },
+        }),
+      );
       console.log('[TmapService.geocode] 원시 응답 데이터:', response.data);
       rawData = response.data;
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+      const errMsg =
+        error instanceof Error ? error.message : JSON.stringify(error);
       throw new HttpException(
         `[TmapService.geocode] HTTP 요청 실패: ${errMsg}`,
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -92,8 +98,13 @@ export class TmapService {
   /**
    * 좌표 기반 reverse geocoding 수행
    */
-  async reverseGeocode(lat: string, lon: string): Promise<TmapGeocodingResponse> {
-    const url = process.env.REVERSE_GEOCODING_URL || 'https://apis.openapi.sk.com/tmap/geo/reversegeocoding';
+  async reverseGeocode(
+    lat: string,
+    lon: string,
+  ): Promise<TmapGeocodingResponse> {
+    const url =
+      process.env.REVERSE_GEOCODING_URL ||
+      'https://apis.openapi.sk.com/tmap/geo/reversegeocoding';
     const params: any = {
       version: '1',
       lat: lat,
@@ -103,7 +114,10 @@ export class TmapService {
       appKey: process.env.TMAP_API_KEY,
     };
     const response = await firstValueFrom(
-      this.httpService.get<any>(url, { params, headers: { Accept: 'application/json' } }),
+      this.httpService.get<any>(url, {
+        params,
+        headers: { Accept: 'application/json' },
+      }),
     );
     const raw = response.data;
     const info = raw.addressInfo || {};
@@ -140,7 +154,10 @@ export class TmapService {
    * @param fromAddress 출발지 주소
    * @param toAddress 도착지 주소
    */
-  async getTimeMachineTravelTime(fromAddress: string, toAddress: string): Promise<number> {
+  async getTimeMachineTravelTime(
+    fromAddress: string,
+    toAddress: string,
+  ): Promise<number> {
     // 출발지, 도착지 좌표 조회
     const fromGeo = await this.geocode(fromAddress);
     const toGeo = await this.geocode(toAddress);
@@ -149,12 +166,15 @@ export class TmapService {
     const endX = toGeo.coordinateInfo.lon;
     const endY = toGeo.coordinateInfo.lat;
     // Time Machine API URL
-    const url = process.env.TMAP_PREDICTION_URL || 'https://api2.sktelecom.com/tmap/routes/prediction';
+    const url =
+      process.env.TMAP_PREDICTION_URL ||
+      'https://api2.sktelecom.com/tmap/routes/prediction';
     // 요청 페이로드를 routesInfo 구조로 구성 (payload에는 안내 요청 정보만 포함)
     // predictionTime은 YYYY-MM-DDTHH:mm:ss+0900 형식으로 설정
     const now = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
-    const predictionTime = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}` +
+    const predictionTime =
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
       `T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}+0900`;
     const payload = {
       routesInfo: {
@@ -182,27 +202,28 @@ export class TmapService {
       const query = `version=1&reqCoordType=${process.env.TMAP_COORD_TYPE || 'WGS84GEO'}&resCoordType=${process.env.TMAP_COORD_TYPE || 'WGS84GEO'}&totalValue=2`;
       const requestUrl = `${url}?${query}`;
       const response = await firstValueFrom(
-        this.httpService.post<any>(
-          requestUrl,
-          payload,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-              appKey: process.env.TMAP_API_KEY,
-            },
+        this.httpService.post<any>(requestUrl, payload, {
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            appKey: process.env.TMAP_API_KEY,
           },
-        ),
+        }),
       );
       responseData = response.data;
     } catch (error: any) {
       const status = error.response?.status;
       const data = error.response?.data;
       // 전체 Tmap 응답 데이터를 로그로 출력
-      console.error('[TmapService.getTimeMachineTravelTime] Tmap error response data:', data);
-      const errorCode = data?.errorCode ?? data?.errorcode ?? data?.code ?? 'unknown';
+      console.error(
+        '[TmapService.getTimeMachineTravelTime] Tmap error response data:',
+        data,
+      );
+      const errorCode =
+        data?.errorCode ?? data?.errorcode ?? data?.code ?? 'unknown';
       // 데이터에서 제공되는 메시지 없으면 JSON 문자열화
-      const errorMsg = data?.errorMessage ?? data?.message ?? JSON.stringify(data);
+      const errorMsg =
+        data?.errorMessage ?? data?.message ?? JSON.stringify(data);
       if (status === 400) {
         // 잘못된 요청
         throw new HttpException(
@@ -236,4 +257,3 @@ export class TmapService {
     return totalTime;
   }
 }
-

@@ -34,4 +34,4 @@ export class AllRoutesResponseDto extends ResponseDto<AllRoutesDataDto> {
   @ValidateNested()
   @Type(() => AllRoutesDataDto)
   declare data: AllRoutesDataDto;
-} 
+}

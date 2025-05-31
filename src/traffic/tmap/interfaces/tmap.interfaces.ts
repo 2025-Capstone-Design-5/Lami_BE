@@ -70,4 +70,4 @@ export interface TmapRouteFeature {
     facilityType?: number;
     categoryRoadType?: number;
   };
-} 
+}

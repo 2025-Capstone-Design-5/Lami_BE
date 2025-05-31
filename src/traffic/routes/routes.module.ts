@@ -10,7 +10,7 @@ import { ItsModule } from '../its/its.module';
 // NODE_ENV에 따라 디버그 컨트롤러 포함 여부 결정
 const routeControllers: any[] = [RoutesController];
 // if (process.env.NODE_ENV !== 'production') {
-  
+
 // }
 routeControllers.push(DebugRoutesController);
 
@@ -20,4 +20,4 @@ routeControllers.push(DebugRoutesController);
   providers: [RoutesService],
   exports: [RoutesService],
 })
-export class RoutesModule {} 
+export class RoutesModule {}

@@ -9,9 +9,7 @@ export class RoutesController {
   constructor(private readonly routesService: RoutesService) {}
 
   @Post()
-  async getAllRoutes(
-    @Body() dto: RouteRequestDto,
-  ): Promise<AllRoutesDataDto> {
+  async getAllRoutes(@Body() dto: RouteRequestDto): Promise<AllRoutesDataDto> {
     const data = await this.routesService.getAllRoutes(
       dto.fromAddress,
       dto.toAddress,

@@ -12,4 +12,4 @@ import { LinkMappingService } from './link-mapping.service';
   controllers: [ItsController],
   exports: [ItsService, LinkMappingService],
 })
-export class ItsModule {} 
+export class ItsModule {}

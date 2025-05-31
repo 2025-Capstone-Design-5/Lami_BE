@@ -1,4 +1,12 @@
-import { IsArray, IsBoolean, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -128,4 +136,4 @@ export class RoutesResponseDto {
   @ValidateNested()
   @Type(() => RouteDto)
   worst: RouteDto;
-} 
+}

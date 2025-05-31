@@ -7,7 +7,10 @@ import * as JSONStream from 'jsonstream';
 import { bbox } from '@turf/bbox';
 
 interface LinkItem {
-  minX: number; minY: number; maxX: number; maxY: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
   linkId: string;
   cx: number;
   cy: number;
@@ -39,7 +42,11 @@ export class LinkMappingService implements OnModuleInit {
         this.linkTree.insert(item);
         this.linkItemMap.set(id, item);
         // ROAD_NO 필드를 sectionId로 매핑 (숫자가 아닌 값은 제외)
-        const rawSection = (props.ROAD_NO ?? props.ROADNO ?? props.road_no)?.toString();
+        const rawSection = (
+          props.ROAD_NO ??
+          props.ROADNO ??
+          props.road_no
+        )?.toString();
         if (rawSection && /^\d+$/.test(rawSection)) {
           this.linkSectionMap.set(id, rawSection);
         }
@@ -53,7 +60,9 @@ export class LinkMappingService implements OnModuleInit {
     filePath: string,
     inserter: (feat: Feature<any>) => void,
   ): Promise<void> {
-    const parser = fs.createReadStream(filePath).pipe(JSONStream.parse('features.*'));
+    const parser = fs
+      .createReadStream(filePath)
+      .pipe(JSONStream.parse('features.*'));
     await new Promise<void>((res, rej) => {
       parser.on('data', inserter);
       parser.on('end', res);
@@ -64,7 +73,12 @@ export class LinkMappingService implements OnModuleInit {
   /** 좌표 → 가장 가까운 링크 ID (centroid 기반) */
   findLinkId(lon: number, lat: number): string | null {
     const buffer = 0.001;
-    const envelope = { minX: lon - buffer, minY: lat - buffer, maxX: lon + buffer, maxY: lat + buffer };
+    const envelope = {
+      minX: lon - buffer,
+      minY: lat - buffer,
+      maxX: lon + buffer,
+      maxY: lat + buffer,
+    };
     const candidates = this.linkTree.search(envelope) as LinkItem[];
     let bestId: string | null = null;
     let bestDist = Infinity;
@@ -72,7 +86,10 @@ export class LinkMappingService implements OnModuleInit {
       const dx = lon - item.cx;
       const dy = lat - item.cy;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < bestDist) { bestDist = dist; bestId = item.linkId; }
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestId = item.linkId;
+      }
     }
     return bestId;
   }
@@ -90,4 +107,4 @@ export class LinkMappingService implements OnModuleInit {
     if (!item) return null;
     return { lon: item.cx, lat: item.cy };
   }
-} 
+}

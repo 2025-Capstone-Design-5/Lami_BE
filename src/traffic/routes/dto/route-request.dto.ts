@@ -40,4 +40,4 @@ export class RouteRequestDto {
   @IsOptional()
   @IsBoolean()
   arriveBy?: boolean;
-} 
+}

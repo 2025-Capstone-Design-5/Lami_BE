@@ -6,13 +6,14 @@ import { AxiosRequestConfig } from 'axios';
 @Injectable()
 export class TagoService {
   constructor(private readonly httpService: HttpService) {}
-  
+
   async getBusStopInfo(
     gpsLati: string,
     gpsLong: string,
-    type: 'xml' | 'json' = 'json'
+    type: 'xml' | 'json' = 'json',
   ): Promise<any> {
-    const url = 'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList';
+    const url =
+      'http://apis.data.go.kr/1613000/BusSttnInfoInqireService/getCrdntPrxmtSttnList';
     const params: AxiosRequestConfig = {
       params: {
         serviceKey: process.env.TAGO_API_KEY!,
@@ -29,7 +30,7 @@ export class TagoService {
   async getCityCodeFromBusStop(
     gpsLati: string,
     gpsLong: string,
-    nodeId: string
+    nodeId: string,
   ): Promise<string> {
     // 1) 근접 정류소 정보 호출
     const response = await this.getBusStopInfo(gpsLati, gpsLong);
@@ -42,16 +43,16 @@ export class TagoService {
     return found?.citycode ?? '00';
   }
 
-  
   async getRealtimeBusArrivals(
     cityCode: string,
     nodeId: string,
     routeId: string,
     pageNo: number = 1,
     numOfRows: number = 10,
-    type: 'xml' | 'json' = 'json'
+    type: 'xml' | 'json' = 'json',
   ): Promise<any> {
-    const url = 'http://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoSpcifyRouteBusArvlPrearngeInfoList';
+    const url =
+      'http://apis.data.go.kr/1613000/ArvlInfoInqireService/getSttnAcctoSpcifyRouteBusArvlPrearngeInfoList';
     const params: AxiosRequestConfig = {
       params: {
         serviceKey: process.env.TAGO_API_KEY!,
@@ -65,4 +66,4 @@ export class TagoService {
     };
     return firstValueFrom(this.httpService.get(url, params));
   }
-} 
+}

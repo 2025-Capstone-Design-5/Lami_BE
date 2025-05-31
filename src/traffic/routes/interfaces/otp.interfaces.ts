@@ -36,5 +36,12 @@ export interface Leg {
   /**
    * OTP showIntermediateStops=true 시 제공되는 경유 정류소 목록
    */
-  intermediateStops?: Array<{ name: string; lat: number; lon: number; stopId?: string; departure?: number; arrival?: number }>;
-} 
+  intermediateStops?: Array<{
+    name: string;
+    lat: number;
+    lon: number;
+    stopId?: string;
+    departure?: number;
+    arrival?: number;
+  }>;
+}
