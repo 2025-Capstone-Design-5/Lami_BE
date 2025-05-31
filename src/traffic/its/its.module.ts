@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { TmapModule } from '../tmap/tmap.module';
 import { RoutesModule } from '../routes/routes.module';
@@ -7,9 +7,9 @@ import { ItsController } from './its.controller';
 import { LinkMappingService } from './link-mapping.service';
 
 @Module({
-  imports: [HttpModule, TmapModule, RoutesModule],
+  imports: [HttpModule, TmapModule, forwardRef(() => RoutesModule)],
   providers: [ItsService, LinkMappingService],
   controllers: [ItsController],
-  exports: [ItsService],
+  exports: [ItsService, LinkMappingService],
 })
 export class ItsModule {} 

@@ -66,6 +66,14 @@ export class MainRouteDto {
   @IsNumber({}, { each: true })
   @IsOptional()
   realtimeArrivalTimes?: number[];
+
+  @IsOptional()
+  @IsArray()
+  trafficItems?: any[];
+
+  @IsOptional()
+  @IsObject()
+  forecast?: any;
 }
 
 /**
