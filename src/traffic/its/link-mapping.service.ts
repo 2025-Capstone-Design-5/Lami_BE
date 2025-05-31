@@ -1,9 +1,10 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Feature, LineString, MultiLineString } from 'geojson';
+import type { Feature } from 'geojson';
+import RBush from 'rbush';
+import * as JSONStream from 'jsonstream';
 import { bbox } from '@turf/bbox';
-// const RBush = require('rbush');
 
 interface LinkItem {
   minX: number; minY: number; maxX: number; maxY: number;
@@ -18,7 +19,7 @@ interface LinkItem {
  */
 @Injectable()
 export class LinkMappingService implements OnModuleInit {
-  private linkTree: any = new (require('rbush'))();
+  private linkTree: any = new RBush();
   private linkItemMap: Map<string, LinkItem> = new Map();
   private linkSectionMap: Map<string, string> = new Map();
 
@@ -52,7 +53,7 @@ export class LinkMappingService implements OnModuleInit {
     filePath: string,
     inserter: (feat: Feature<any>) => void,
   ): Promise<void> {
-    const parser = fs.createReadStream(filePath).pipe(require('JSONStream').parse('features.*'));
+    const parser = fs.createReadStream(filePath).pipe(JSONStream.parse('features.*'));
     await new Promise<void>((res, rej) => {
       parser.on('data', inserter);
       parser.on('end', res);

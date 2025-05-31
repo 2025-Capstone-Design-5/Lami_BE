@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import polyline = require('@mapbox/polyline');
+import polyline from '@mapbox/polyline';
 import { firstValueFrom } from 'rxjs';
 import { TmapService } from '../tmap/tmap.service';
 import { TagoService } from '../tago/tago.service';

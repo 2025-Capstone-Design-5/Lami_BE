@@ -4,11 +4,7 @@ import { RoutesService } from '../routes/routes.service';
 import { ItsService } from './its.service';
 import { LinkMappingService } from './link-mapping.service';
 import { SECTION_INFO } from './section-map';
-// @ts-ignore
-import polyline = require('@mapbox/polyline');
-import * as fs from 'fs';
-import * as path from 'path';
-import type { FeatureCollection } from 'geojson';
+import polyline from '@mapbox/polyline';
 
 @Controller('traffic/its')
 export class ItsController {
