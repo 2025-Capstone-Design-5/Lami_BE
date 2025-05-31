@@ -90,6 +90,52 @@ export class TmapService {
   }
 
   /**
+   * 좌표 기반 reverse geocoding 수행
+   */
+  async reverseGeocode(lat: string, lon: string): Promise<TmapGeocodingResponse> {
+    const url = process.env.REVERSE_GEOCODING_URL || 'https://apis.openapi.sk.com/tmap/geo/reversegeocoding';
+    const params: any = {
+      version: '1',
+      lat: lat,
+      lon: lon,
+      coordType: process.env.TMAP_COORD_TYPE || 'WGS84GEO',
+      addressType: 'A10',
+      appKey: process.env.TMAP_API_KEY,
+    };
+    const response = await firstValueFrom(
+      this.httpService.get<any>(url, { params, headers: { Accept: 'application/json' } }),
+    );
+    const raw = response.data;
+    const info = raw.addressInfo || {};
+    return {
+      coordinateInfo: {
+        coordType: params.coordType,
+        addressFlag: info.addressType ?? '',
+        matchFlag: '',
+        lat: lat,
+        lon: lon,
+        city_do: info.city_do ?? '',
+        gu_gun: info.gu_gun ?? '',
+        eup_myun: info.eup_myun ?? '',
+        legalDong: info.adminDong ?? '',
+        legalDongCode: info.adminDongCode ?? '',
+        adminDong: info.adminDong ?? '',
+        adminDongCode: info.adminDongCode ?? '',
+        ri: info.ri ?? '',
+        bunji: info.bunji ?? '',
+        newMatchFlag: '',
+        newLat: '',
+        newLon: '',
+        newRoadName: '',
+        newBuildngIndex: info.buildingIndex ?? '',
+        newBuildngName: info.buildingName ?? '',
+        newBuildngCateName: '',
+        remainder: '',
+      },
+    };
+  }
+
+  /**
    * Tmap Time Machine API를 호출하여 과거 교통 소요 시간을 반환
    * @param fromAddress 출발지 주소
    * @param toAddress 도착지 주소
