@@ -11,7 +11,8 @@ import { AgentModule } from './agent/agent.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { LlmModule } from './llm/llm.module';
 import { VoiceModule } from './voice/voice.module';
-
+import { AlarmModule } from './alarm/alarm.module';
+import { ChatModule } from './chat/chat.module';
 @Module({
   imports: [
     // 환경변수 설정
@@ -28,6 +29,8 @@ import { VoiceModule } from './voice/voice.module';
       synchronize: true, // 개발 환경에서만 true로 설정
     }),
     // Application Modules
+    ChatModule,
+    AlarmModule,
     VoiceModule,
     LlmModule,
     TrafficModule,
