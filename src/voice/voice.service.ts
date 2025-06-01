@@ -1,13 +1,43 @@
-import { Injectable } from '@nestjs/common';
-import { LlmService } from '../llm/llm.service';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
+import * as FormData from 'form-data';
+import * as fs from 'fs';
 
 @Injectable()
 export class VoiceService {
-  constructor(private readonly llmService: LlmService) {}
+  private readonly whisperUrl: string;
 
-  async handleVoiceCommand(command: string): Promise<{ alarmTime: string }> {
-    const alarmTime = await this.llmService.extractAlarmTime(command);
-    // 여기서 추가적으로 알람 등록 로직을 넣을 수 있습니다
-    return { alarmTime };
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly httpService: HttpService,
+  ) {
+    this.whisperUrl = this.configService.get<string>('WHISPER_API_URL') ?? '';
+    if (!this.whisperUrl) {
+      throw new Error('WHISPER_API_URL 환경변수가 없습니다.');
+    }
+  }
+
+  async transcribeVoice(filePath: string): Promise<string> {
+    try {
+      const form = new FormData();
+      form.append('file', fs.createReadStream(filePath));
+
+      const response = await firstValueFrom(
+        this.httpService.post(this.whisperUrl, form, {
+          headers: form.getHeaders(),
+          maxBodyLength: Infinity,
+        }),
+      );
+
+      return response.data?.text ?? '';
+    } catch (err) {
+      console.error('Whisper 요청 실패:', err.message);
+      throw new HttpException(
+        'Whisper 서버 요청 실패',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
   }
 }
