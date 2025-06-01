@@ -33,4 +33,4 @@ export interface Leg {
   startTime?: number;
   legGeometry: unknown;
   steps: unknown[];
-} 
+}

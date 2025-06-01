@@ -8,7 +8,7 @@ export class DebugRoutesController {
   @Post()
   async getOtpRoutes(
     @Body('from') from: string,
-    @Body('to') to: string
+    @Body('to') to: string,
   ): Promise<any> {
     return this.routesService.getOtpRoutes(from, to);
   }
@@ -16,8 +16,8 @@ export class DebugRoutesController {
   @Post('optimal')
   async getOptimalOtpRoute(
     @Body('from') from: string,
-    @Body('to') to: string
+    @Body('to') to: string,
   ): Promise<any> {
     return this.routesService.getOptimalOtpRoute(from, to);
   }
-} 
+}

@@ -10,13 +10,19 @@ export class RoutesController {
 
   @Post()
   async getAllRoutes(@Body() dto: RouteRequestDto): Promise<RoutesResponseDto> {
-    const data = await this.routesService.getAllRoutes(dto.fromAddress, dto.toAddress);
+    const data = await this.routesService.getAllRoutes(
+      dto.fromAddress,
+      dto.toAddress,
+    );
     return plainToInstance(RoutesResponseDto, data);
   }
 
   @Post('optimal')
   async getOptimalRoute(@Body() dto: RouteRequestDto): Promise<RouteDto> {
-    const data = await this.routesService.getOptimalRoute(dto.fromAddress, dto.toAddress);
+    const data = await this.routesService.getOptimalRoute(
+      dto.fromAddress,
+      dto.toAddress,
+    );
     return plainToInstance(RouteDto, data);
   }
-} 
+}

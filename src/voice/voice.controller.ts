@@ -6,7 +6,9 @@ export class VoiceController {
   constructor(private readonly voiceService: VoiceService) {}
 
   @Post('command')
-  async receiveVoiceCommand(@Body('text') text: string): Promise<{ alarmTime: string }> {
+  async receiveVoiceCommand(
+    @Body('text') text: string,
+  ): Promise<{ alarmTime: string }> {
     return this.voiceService.handleVoiceCommand(text);
   }
 }

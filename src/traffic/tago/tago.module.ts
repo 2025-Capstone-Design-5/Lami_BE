@@ -9,4 +9,4 @@ import { TagoController } from '@/traffic/tago/tago.controller';
   controllers: [TagoController],
   exports: [TagoService],
 })
-export class TagoModule {} 
+export class TagoModule {}

@@ -5,12 +5,12 @@ import { OAuth2Client } from 'google-auth-library';
 @Injectable()
 export class CalendarService {
   private oAuth2Client: OAuth2Client;
-  
+
   constructor() {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri = process.env.GOOGLE_REDIRECT_URI_CALENDAR;
-    
+
     this.oAuth2Client = new OAuth2Client(clientId, clientSecret, redirectUri);
   }
 
@@ -33,7 +33,10 @@ export class CalendarService {
 
   // 구글 캘린더 이벤트 가져오기
   async getCalendarEvents(): Promise<any> {
-    const calendar = google.calendar({ version: 'v3', auth: this.oAuth2Client });
+    const calendar = google.calendar({
+      version: 'v3',
+      auth: this.oAuth2Client,
+    });
     const res = await calendar.events.list({
       calendarId: 'primary',
       timeMin: new Date().toISOString(),

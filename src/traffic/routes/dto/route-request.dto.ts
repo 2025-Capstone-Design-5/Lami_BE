@@ -19,4 +19,4 @@ export class RouteRequestDto {
   @IsString()
   @IsNotEmpty()
   toAddress: string;
-} 
+}

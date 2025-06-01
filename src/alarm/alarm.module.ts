@@ -5,6 +5,6 @@ import { AlarmService } from './alarm.service';
 @Module({
   controllers: [AlarmController],
   providers: [AlarmService],
-  exports: [AlarmService],  // 다른 모듈(ChatService 등)에서 사용 가능하게 함
+  exports: [AlarmService], // 다른 모듈(ChatService 등)에서 사용 가능하게 함
 })
 export class AlarmModule {}

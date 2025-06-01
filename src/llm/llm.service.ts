@@ -26,13 +26,17 @@ export class LlmService {
   async extractAlarmTime(prompt: string): Promise<string> {
     try {
       const response = await firstValueFrom(
-        this.httpService.post(this.apiUrl, {
-          model: this.modelName,
-          prompt: prompt,
-          stream: false,
-        }, {
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        this.httpService.post(
+          this.apiUrl,
+          {
+            model: this.modelName,
+            prompt: prompt,
+            stream: false,
+          },
+          {
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       );
 
       const raw = response.data?.response;
@@ -45,7 +49,10 @@ export class LlmService {
       return match[0];
     } catch (error) {
       console.error('LLM 요청 실패:', error.message);
-      throw new HttpException('LLM 요청 실패', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'LLM 요청 실패',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -62,13 +69,17 @@ export class LlmService {
 
     try {
       const response = await firstValueFrom(
-        this.httpService.post(this.apiUrl, {
-          model: this.modelName,
-          prompt: fullPrompt,
-          stream: false,
-        }, {
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        this.httpService.post(
+          this.apiUrl,
+          {
+            model: this.modelName,
+            prompt: fullPrompt,
+            stream: false,
+          },
+          {
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       );
 
       const raw = response.data?.response;
@@ -76,13 +87,16 @@ export class LlmService {
       try {
         const parsed = JSON.parse(raw);
         return parsed;
-      } catch (err) {
-        console.error("LLM 응답 파싱 실패:", raw);
+      } catch {
+        console.error('LLM 응답 파싱 실패:', raw);
         throw new Error('LLM 응답을 JSON으로 파싱할 수 없습니다.');
       }
     } catch (error) {
       console.error('LLM 요청 실패:', error.message);
-      throw new HttpException('LLM 요청 실패', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'LLM 요청 실패',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }
