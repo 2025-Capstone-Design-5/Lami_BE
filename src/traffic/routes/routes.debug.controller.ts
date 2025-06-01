@@ -19,7 +19,6 @@ export class DebugRoutesController {
     @Body('maxWalkDistance') maxWalkDistance?: number,
     @Body('maxTransfers') maxTransfers?: number,
     @Body('optimize') optimize: string = 'QUICK',
-
   ): Promise<any> {
     return this.routesService.getOtpRoutes(from, to, {
       mode,

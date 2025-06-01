@@ -14,7 +14,7 @@ export class ChatService {
 
     // 알람 등록 로직이 필요할 경우 실행
     if (alarmInfo.wake_up_time) {
-      await this.alarmService.registerAlarm(alarmInfo.wake_up_time);
+      this.alarmService.registerAlarm(alarmInfo.wake_up_time);
     }
 
     return {

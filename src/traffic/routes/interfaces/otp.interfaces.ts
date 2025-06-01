@@ -44,5 +44,4 @@ export interface Leg {
     departure?: number;
     arrival?: number;
   }>;
-
 }

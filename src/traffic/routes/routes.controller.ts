@@ -21,5 +21,4 @@ export class RoutesController {
     );
     return plainToInstance(AllRoutesDataDto, data);
   }
-
 }

@@ -43,22 +43,46 @@ export class AuthController {
   @Post('google/code')
   @HttpCode(HttpStatus.OK)
   async exchangeCode(
-    @Body() body: { code: string; codeVerifier: string; platform: 'android' | 'ios' },
+    @Body()
+    body: {
+      code: string;
+      codeVerifier: string;
+      platform: 'android' | 'ios';
+    },
   ) {
     const { code, codeVerifier, platform } = body;
-    this.logger.log(`exchangeCode request - code: ${code}, platform: ${platform}`);
+    this.logger.log(
+      `exchangeCode request - code: ${code}, platform: ${platform}`,
+    );
     try {
-      const tokens = await this.authService.exchangeCodeForTokens(code, codeVerifier, platform);
-      this.logger.log(`Tokens obtained for platform ${platform}: ${JSON.stringify(tokens, null, 2)}`);
+      const tokens = await this.authService.exchangeCodeForTokens(
+        code,
+        codeVerifier,
+        platform,
+      );
+      this.logger.log(
+        `Tokens obtained for platform ${platform}: ${JSON.stringify(tokens, null, 2)}`,
+      );
       // id_token 디코딩
       const idTokenString = tokens.id_token;
       const base64Url = idTokenString.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-      const idTokenPayload = JSON.parse(Buffer.from(base64 + padding, 'base64').toString('utf-8'));
+      const idTokenPayload = JSON.parse(
+        Buffer.from(base64 + padding, 'base64').toString('utf-8'),
+      );
       const { sub: googleId, email, name } = idTokenPayload;
-      const user = await this.usersService.findOrCreate({ googleId, email, name });
-      await this.usersService.updateUserTokens(googleId, tokens.access_token, tokens.refresh_token, new Date());
+      const user = await this.usersService.findOrCreate({
+        googleId,
+        email,
+        name,
+      });
+      await this.usersService.updateUserTokens(
+        googleId,
+        tokens.access_token,
+        tokens.refresh_token,
+        new Date(),
+      );
       this.logger.log(`User saved with ID: ${user.id}`);
       return {
         message: 'Tokens obtained',
