@@ -1,10 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { TmapModule } from '../tmap/tmap.module';
 import { TagoModule } from '../tago/tago.module';
 import { RoutesService } from './routes.service';
 import { RoutesController } from './routes.controller';
 import { DebugRoutesController } from './routes.debug.controller';
+import { ItsModule } from '../its/its.module';
 
 // NODE_ENV에 따라 디버그 컨트롤러 포함 여부 결정
 const routeControllers: any[] = [RoutesController];
@@ -14,7 +15,7 @@ const routeControllers: any[] = [RoutesController];
 routeControllers.push(DebugRoutesController);
 
 @Module({
-  imports: [HttpModule, TmapModule, TagoModule],
+  imports: [HttpModule, TmapModule, TagoModule, forwardRef(() => ItsModule)],
   controllers: routeControllers,
   providers: [RoutesService],
   exports: [RoutesService],

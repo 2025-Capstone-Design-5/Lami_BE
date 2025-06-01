@@ -10,6 +10,7 @@ services:
       POSTGRES_DB: ${DB_DATABASE}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    # network_mode: host  # host 네트워크 모드 제거
     ports:
       - '5432:5432'
 
@@ -28,15 +29,15 @@ services:
       DB_DATABASE: ${DB_DATABASE}
       OTP_URL: http://host.docker.internal:8080
       TZ: Asia/Seoul
-    ports:
-      - '3000:3000'
+    # network_mode: host  # host 네트워크 모드 제거
     volumes:
       - .:/app
-      - /app/node_modules
       - /etc/localtime:/etc/localtime:ro
     command: npm run start:dev
     depends_on:
       - db
+    ports:
+      - '3000:3000'
 
 volumes:
   postgres-data: 
