@@ -1,7 +1,8 @@
+version: "2.4"
 services:
   db:
     image: postgres:14
-    restart: unless-stopped
+    restart: "no"
     env_file:
       - .env
     environment:
@@ -18,7 +19,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: "no"
     env_file:
       - .env
     environment:
@@ -33,6 +34,8 @@ services:
     volumes:
       - .:/app
       - /etc/localtime:/etc/localtime:ro
+    cpus: 1.0
+    mem_limit: 4g
     command: npm run start:dev
     depends_on:
       - db
