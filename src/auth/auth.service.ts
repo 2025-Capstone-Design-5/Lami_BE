@@ -60,16 +60,20 @@ export class AuthService {
         : process.env.GOOGLE_CLIENT_SECRET_IOS;
     const redirectUri = process.env.GOOGLE_REDIRECT_URI_AUTH!;
 
+    // PKCE public client: client_secret이 있으면 포함
+    const params: Record<string, string> = {
+      code,
+      client_id: clientId!,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+      code_verifier: codeVerifier,
+    };
+    if (clientSecret) {
+      params.client_secret = clientSecret;
+    }
     const response = await axios.post(
       'https://oauth2.googleapis.com/token',
-      qs.stringify({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-        code_verifier: codeVerifier,
-      }),
+      qs.stringify(params),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
     );
     const tokens = response.data;

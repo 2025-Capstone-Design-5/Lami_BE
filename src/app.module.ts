@@ -27,6 +27,7 @@ import { ChatModule } from './chat/chat.module';
       database: process.env.DB_DATABASE!,
       autoLoadEntities: true,
       synchronize: true, // 개발 환경에서만 true로 설정
+      dropSchema: true, // 개발 시 변경마다 스키마 초기화
     }),
     // Application Modules
     ChatModule,

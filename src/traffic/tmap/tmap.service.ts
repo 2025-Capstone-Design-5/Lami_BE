@@ -1,6 +1,7 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { retryWhen, delay, take } from 'rxjs/operators';
 import {
   TmapGeocodingResponse,
   TmapRouteResponse,
@@ -19,35 +20,29 @@ export class TmapService {
       dong: parts.slice(2).join(' ') || '',
     };
 
-    const url =
-      process.env.GEOCODING_URL ||
-      'https://apis.openapi.sk.com/tmap/geo/geocoding';
-    const params: any = {
-      version: '1',
-      city_do: query.city_do,
-      gu_gun: query.gu_gun,
-      dong: query.dong,
-      addressFlag: 'F00',
-      coordType: process.env.TMAP_COORD_TYPE || 'WGS84GEO',
-      appKey: process.env.TMAP_API_KEY,
-    };
-    console.log('[TmapService] 요청 URL:', url);
-    console.log('[TmapService] 요청 파라미터:', params);
+    // Tmap API 가이드에 따른 URL 인코딩 및 retry 로직
+    const baseUrl = process.env.GEOCODING_URL || 'https://apis.openapi.sk.com/tmap/geo/geocoding';
+    const version = '1';
+    const coordType = process.env.TMAP_COORD_TYPE || 'WGS84GEO';
+    const appKey = process.env.TMAP_API_KEY || '';
+    const urlWithParams = `${baseUrl}?version=${encodeURIComponent(version)}&city_do=${encodeURIComponent(query.city_do)}&gu_gun=${encodeURIComponent(query.gu_gun)}&dong=${encodeURIComponent(query.dong)}&addressFlag=F00&coordType=${encodeURIComponent(coordType)}&appKey=${encodeURIComponent(appKey)}`;
+    console.log('[TmapService] geocode URL:', urlWithParams);
     let rawData: any;
     try {
       const response = await firstValueFrom(
-        this.httpService.get<any>(url, {
-          params,
+        this.httpService.get<any>(urlWithParams, {
           headers: { Accept: 'application/json' },
-        }),
+        }).pipe(
+          retryWhen(errors => errors.pipe(delay(2000), take(3)))
+        ),
       );
-      console.log('[TmapService.geocode] 원시 응답 데이터:', response.data);
+      console.log('[TmapService.geocode] Raw response:', response.data);
       rawData = response.data;
-    } catch (error) {
-      const errMsg =
-        error instanceof Error ? error.message : JSON.stringify(error);
+    } catch (error: any) {
+      // 내부 로그를 간소화하여 메시지만 출력
+      console.error('[TmapService.geocode] HTTP 요청 실패:', error.message ?? error.toString());
       throw new HttpException(
-        `[TmapService.geocode] HTTP 요청 실패: ${errMsg}`,
+        'Tmap 지오코딩 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
@@ -106,7 +101,7 @@ export class TmapService {
       process.env.REVERSE_GEOCODING_URL ||
       'https://apis.openapi.sk.com/tmap/geo/reversegeocoding';
     const params: any = {
-      version: '1',
+      version: '2',
       lat: lat,
       lon: lon,
       coordType: process.env.TMAP_COORD_TYPE || 'WGS84GEO',
@@ -199,7 +194,7 @@ export class TmapService {
     let responseData: any;
     try {
       // Querystring에 version, coordType, totalValue를 포함하여 POST 요청
-      const query = `version=1&reqCoordType=${process.env.TMAP_COORD_TYPE || 'WGS84GEO'}&resCoordType=${process.env.TMAP_COORD_TYPE || 'WGS84GEO'}&totalValue=2`;
+      const query = `version=2&reqCoordType=${process.env.TMAP_COORD_TYPE || 'WGS84GEO'}&resCoordType=${process.env.TMAP_COORD_TYPE || 'WGS84GEO'}&totalValue=2`;
       const requestUrl = `${url}?${query}`;
       const response = await firstValueFrom(
         this.httpService.post<any>(requestUrl, payload, {
