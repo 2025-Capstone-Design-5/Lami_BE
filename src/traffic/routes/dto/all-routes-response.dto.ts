@@ -1,33 +1,19 @@
-import { IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ResponseDto } from '../../../common/dto/response.dto';
-import { RouteDto } from './route-info.dto';
+import { FlattenRouteDto } from './flattened-routes-response.dto';
 
 export class AllRoutesDataDto {
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RouteDto)
-  walk: RouteDto[];
+  @IsString()
+  origin: string;
+
+  @IsString()
+  destination: string;
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => RouteDto)
-  car: RouteDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RouteDto)
-  subway: RouteDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RouteDto)
-  bus: RouteDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => RouteDto)
-  bus_subway: RouteDto[];
+  @Type(() => FlattenRouteDto)
+  routes: FlattenRouteDto[];
 }
 
 export class AllRoutesResponseDto extends ResponseDto<AllRoutesDataDto> {
