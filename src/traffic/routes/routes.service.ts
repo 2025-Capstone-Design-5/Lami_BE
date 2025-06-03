@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import * as polyline from '@mapbox/polyline';
 import { firstValueFrom } from 'rxjs';
@@ -6,7 +6,10 @@ import { TmapService } from '../tmap/tmap.service';
 import { TagoService } from '../tago/tago.service';
 import { ItsService } from '../its/its.service';
 import { LinkMappingService } from '../its/link-mapping.service';
-import { AllRoutesDataDto } from './dto/all-routes-response.dto';
+import { RouteDto } from './dto/route-info.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Route } from './entities/route.entity';
 
 import {
   OtpPlanResponse,
@@ -14,6 +17,9 @@ import {
   Itinerary,
   Leg,
 } from './interfaces/otp.interfaces';
+
+// 내부 서비스용 RawRoutes 타입 정의
+type RawRoutes = Record<'walk'|'car'|'subway'|'bus'|'bus_subway', RouteDto[]>;
 
 @Injectable()
 export class RoutesService {
@@ -23,6 +29,8 @@ export class RoutesService {
     private readonly tagoService: TagoService,
     private readonly itsService: ItsService,
     private readonly mapper: LinkMappingService,
+    @InjectRepository(Route)
+    private readonly routeRepo: Repository<Route>,
   ) {}
 
   /**
@@ -107,7 +115,7 @@ export class RoutesService {
     fromAddress: string,
     toAddress: string,
     options?: { date?: string; time?: string; arriveBy?: boolean },
-  ): Promise<AllRoutesDataDto> {
+  ): Promise<RawRoutes> {
     // 1) 순수 도보, 대중교통, 자동차 경로 병렬 조회
     const [walkPlan, transitPlan, carPlan] = await Promise.all([
       this.getOtpRoutes(fromAddress, toAddress, {
@@ -336,13 +344,13 @@ export class RoutesService {
       categories.bus_subway.map(mapItinToRoute),
     );
     // ITS 정보 통합 (중복 호출 제거)
-    const allRoutes: AllRoutesDataDto = { walk, car, subway, bus, bus_subway };
+    const allRoutes: RawRoutes = { walk, car, subway, bus, bus_subway };
     // 1) Bounding Box 별 실시간 교통 호출 준비
     const rtPromises = new Map<string, Promise<any>>();
     // 2) 고유 섹션ID 별 예측정보 호출 준비
     const fcSectionIds = new Set<string>();
     // 라우트별 메타데이터 저장 (its.controller와 동일 logic 적용)
-    for (const key of Object.keys(allRoutes) as (keyof AllRoutesDataDto)[]) {
+    for (const key of Object.keys(allRoutes) as (keyof RawRoutes)[]) {
       for (const route of allRoutes[key]) {
         // 오직 transitLeg(버스/트램 포함) 경로만 처리
         const transitSub = (route.sub || []).filter((s) => s.transitLeg);
@@ -390,18 +398,12 @@ export class RoutesService {
         });
       }
     }
-    // 실시간 교통정보 호출 실행 및 결과 수집
+    // 실시간 교통정보 호출 실행 및 결과 수집 (parallel)
     const rtResults = new Map<string, any[]>();
-    for (const [key, promise] of rtPromises) {
-      console.log(
-        `[getAllRoutes][ITS] Awaiting realtime promise for bboxKey=${key}`,
-      );
-      const rt = await promise;
-      console.log(
-        `[getAllRoutes][ITS] Raw ITS response for bboxKey=${key}:`,
-        rt,
-      );
-      // its.controller와 동일한 parsing 로직 적용
+    const rtEntries = Array.from(rtPromises.entries());
+    const rtResponses = await Promise.all(rtEntries.map(([_, p]) => p));
+    rtResponses.forEach((rt, idx) => {
+      const key = rtEntries[idx][0];
       const body = rt?.response?.body ?? rt?.body ?? rt;
       const rawItems = body?.items?.item ?? body?.items ?? [];
       const itemsArr = Array.isArray(rawItems)
@@ -409,38 +411,28 @@ export class RoutesService {
         : rawItems
           ? [rawItems]
           : [];
-      console.log(
-        `[getAllRoutes][ITS] Parsed ITS items for bboxKey=${key}:`,
-        itemsArr,
-      );
       rtResults.set(key, itemsArr);
-    }
-    // 예측정보 호출 준비 및 실행
+    });
+    // 예측정보 호출 준비 및 실행 (parallel)
     const fCastDate = options?.date
       ? options.date.replace(/-/g, '')
       : new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const fCastHour = options?.time
       ? options.time
       : new Date().getHours().toString().padStart(2, '0');
-    const fcPromises = new Map<string, Promise<any>>();
-    for (const sec of fcSectionIds) {
-      fcPromises.set(
-        sec,
-        this.itsService.getForecastInfo({
-          sectionId: sec,
-          fCastDate,
-          fCastHour,
-          getType: 'json',
-        }),
-      );
-    }
+    const fcEntries = Array.from(fcSectionIds).map((sec) => [
+      sec,
+      this.itsService.getForecastInfo({ sectionId: sec, fCastDate, fCastHour, getType: 'json' }),
+    ] as [string, Promise<any>]);
     const fcResults = new Map<string, any>();
-    for (const [sec, promise] of fcPromises) {
-      const fc = await promise;
-      fcResults.set(sec, fc?.response?.body ?? fc?.body ?? fc);
-    }
+    const fcResponses = await Promise.all(fcEntries.map(([_, p]) => p));
+    fcResponses.forEach((fc, idx) => {
+      const sec = fcEntries[idx][0];
+      const result = fc?.response?.body ?? fc?.body ?? fc;
+      fcResults.set(sec, result);
+    });
     // 결과를 각 라우트에 할당
-    for (const key of Object.keys(allRoutes) as (keyof AllRoutesDataDto)[]) {
+    for (const key of Object.keys(allRoutes) as (keyof RawRoutes)[]) {
       for (const route of allRoutes[key]) {
         // linkIdSet이 없으면 ITS 로직 건너뛰고 기본값 설정
         const linkIdSet = (route as any)._linkIdSet as Set<string> | undefined;
@@ -496,5 +488,16 @@ export class RoutesService {
       }
     }
     return allRoutes;
+  }
+
+  /**
+   * 저장된 경로 상세 조회
+   */
+  async getRouteDetailById(routeId: string): Promise<Route> {
+    const route = await this.routeRepo.findOne({ where: { id: routeId }, relations: ['realtimeParams'] });
+    if (!route) {
+      throw new NotFoundException(`Route ${routeId} not found`);
+    }
+    return route;
   }
 }

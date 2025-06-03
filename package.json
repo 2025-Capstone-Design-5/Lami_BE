@@ -23,6 +23,7 @@
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
     "@nestjs/axios": "^4.0.0",
+    "@nestjs/cache-manager": "^3.0.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -32,6 +33,7 @@
     "@turf/helpers": "^7.2.0",
     "@turf/nearest-point-on-line": "^7.2.0",
     "axios": "^1.9.0",
+    "cache-manager": "^6.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "geojson-rbush": "^3.2.0",

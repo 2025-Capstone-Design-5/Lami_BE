@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
@@ -15,6 +16,11 @@ import { AlarmModule } from './alarm/alarm.module';
 import { ChatModule } from './chat/chat.module';
 @Module({
   imports: [
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 500,
+      max: 100,
+    }),
     // 환경변수 설정
     ConfigModule.forRoot({ isGlobal: true }),
     // TypeORM 설정 (PostgreSQL)
