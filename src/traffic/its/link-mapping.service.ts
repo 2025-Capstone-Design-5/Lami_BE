@@ -27,10 +27,16 @@ export class LinkMappingService implements OnModuleInit {
   private linkSectionMap: Map<string, string> = new Map();
 
   async onModuleInit() {
-    // 1) 링크 R-Tree 구축
+    // 1) GeoJSON 파일이 존재하는 경우만 링크 R-Tree 구축
+    const filePath = path.resolve(__dirname, '../data/moct_link.geojson');
+    if (!fs.existsSync(filePath)) {
+      console.warn(`[LinkMappingService] geojson 파일이 없어 로드 스킵: ${filePath}`);
+      return;
+    }
+    // 링크 R-Tree 구축
     let linkCount = 0;
     await this.loadGeojsonToTree(
-      path.resolve(__dirname, '../data/moct_link.geojson'),
+      filePath,
       (feat: Feature<any>) => {
         const props = feat.properties as Record<string, any>;
         const id = (props.LINK_ID ?? props.linkId)?.toString();
