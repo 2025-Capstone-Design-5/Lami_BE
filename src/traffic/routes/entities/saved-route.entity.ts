@@ -1,4 +1,10 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  OneToMany,
+} from 'typeorm';
 import { Route } from './route.entity';
 
 @Entity('saved_routes')
@@ -12,6 +18,6 @@ export class SavedRoute {
   @CreateDateColumn()
   createdAt: Date;
 
-  @OneToMany(() => Route, route => route.savedRoute, { cascade: true })
+  @OneToMany(() => Route, (route) => route.savedRoute, { cascade: true })
   routes: Route[];
-} 
+}

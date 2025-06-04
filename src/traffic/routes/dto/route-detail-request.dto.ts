@@ -9,4 +9,4 @@ export class RouteDetailRequestDto {
 
   @IsNumber()
   index: number;
-} 
+}

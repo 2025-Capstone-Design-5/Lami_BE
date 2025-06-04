@@ -7,4 +7,4 @@ export class RouteDetailResponseDto extends ResponseDto<RouteDto> {
   @ValidateNested()
   @Type(() => RouteDto)
   declare data: RouteDto;
-} 
+}

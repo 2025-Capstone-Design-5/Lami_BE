@@ -95,7 +95,7 @@ export class AuthController {
       };
     } catch (err) {
       this.logger.error(
-        `Token exchange failed: ${JSON.stringify((err as any).response?.data || err.message)}`
+        `Token exchange failed: ${JSON.stringify(err.response?.data || err.message)}`,
       );
       throw new HttpException('Token exchange failed', HttpStatus.BAD_REQUEST);
     }

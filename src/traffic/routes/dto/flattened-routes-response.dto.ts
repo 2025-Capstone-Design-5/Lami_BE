@@ -23,4 +23,4 @@ export class FlattenRoutesResponseDto {
   @ValidateNested({ each: true })
   @Type(() => FlattenRouteDto)
   routes: FlattenRouteDto[];
-} 
+}

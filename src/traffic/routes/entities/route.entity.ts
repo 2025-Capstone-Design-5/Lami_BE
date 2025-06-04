@@ -1,4 +1,10 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, OneToMany } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  OneToMany,
+} from 'typeorm';
 import { SavedRoute } from './saved-route.entity';
 import { RouteRealtimeParam } from './route-realtime-param.entity';
 
@@ -7,7 +13,9 @@ export class Route {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => SavedRoute, savedRoute => savedRoute.routes, { onDelete: 'CASCADE' })
+  @ManyToOne(() => SavedRoute, (savedRoute) => savedRoute.routes, {
+    onDelete: 'CASCADE',
+  })
   savedRoute: SavedRoute;
 
   @Column()
@@ -31,6 +39,8 @@ export class Route {
   @Column({ type: 'json', nullable: true })
   details: any;
 
-  @OneToMany(() => RouteRealtimeParam, (p: RouteRealtimeParam) => p.route, { cascade: true })
+  @OneToMany(() => RouteRealtimeParam, (p: RouteRealtimeParam) => p.route, {
+    cascade: true,
+  })
   realtimeParams: RouteRealtimeParam[];
-} 
+}

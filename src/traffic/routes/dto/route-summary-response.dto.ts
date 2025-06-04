@@ -84,4 +84,4 @@ export class AllRoutesSummaryResponseDto extends ResponseDto<AllRoutesSummaryDat
   @ValidateNested()
   @Type(() => AllRoutesSummaryDataDto)
   declare data: AllRoutesSummaryDataDto;
-} 
+}

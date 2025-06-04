@@ -86,19 +86,27 @@ export class TagoService {
       },
       timeout: 10000, // 10초 타임아웃
     };
-    
+
     console.log(`[TagoService] Calling getRouteInfoItem with URL: ${url}`);
     console.log(`[TagoService] Params:`, params.params);
-    console.log(`[TagoService] Using serviceKey: ${process.env.TAGO_API_KEY?.substring(0, 10)}...`);
-    
+    console.log(
+      `[TagoService] Using serviceKey: ${process.env.TAGO_API_KEY?.substring(0, 10)}...`,
+    );
+
     try {
       const response = await firstValueFrom(this.httpService.get(url, params));
       console.log(`[TagoService] Response status: ${response.status}`);
       console.log(`[TagoService] Response data type:`, typeof response.data);
-      console.log(`[TagoService] Response data:`, JSON.stringify(response.data, null, 2));
+      console.log(
+        `[TagoService] Response data:`,
+        JSON.stringify(response.data, null, 2),
+      );
       return response;
     } catch (error) {
-      console.error(`[TagoService] Error calling getRouteInfoItem:`, error.message);
+      console.error(
+        `[TagoService] Error calling getRouteInfoItem:`,
+        error.message,
+      );
       if (error.response) {
         console.error(`[TagoService] Error status:`, error.response.status);
         console.error(`[TagoService] Error response:`, error.response.data);

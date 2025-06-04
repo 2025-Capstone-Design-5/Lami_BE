@@ -1,4 +1,10 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, CreateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { Route } from './route.entity';
 
 @Entity('route_realtime_params')
@@ -6,7 +12,9 @@ export class RouteRealtimeParam {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => Route, route => route.realtimeParams, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Route, (route) => route.realtimeParams, {
+    onDelete: 'CASCADE',
+  })
   route: Route;
 
   @Column()
@@ -20,4 +28,4 @@ export class RouteRealtimeParam {
 
   @CreateDateColumn()
   createdAt: Date;
-} 
+}

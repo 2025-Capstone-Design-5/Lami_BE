@@ -1,12 +1,32 @@
-import { Controller, Post, Body, HttpStatus, Get, Param, UseInterceptors, Inject, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpStatus,
+  Get,
+  Param,
+  UseInterceptors,
+  Inject,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SavedRoute } from './entities/saved-route.entity';
 import { RoutesService } from './routes.service';
 import { RouteRequestDto } from './dto/route-request.dto';
-import { AllRoutesSummaryResponseDto, AllRoutesSummaryDataDto, RouteSummaryDto } from './dto/route-summary-response.dto';
+import {
+  AllRoutesSummaryResponseDto,
+  AllRoutesSummaryDataDto,
+  RouteSummaryDto,
+} from './dto/route-summary-response.dto';
 import { plainToInstance } from 'class-transformer';
-import { CACHE_MANAGER, CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
+import {
+  CACHE_MANAGER,
+  CacheInterceptor,
+  CacheKey,
+  CacheTTL,
+} from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { RouteDetailRequestDto } from './dto/route-detail-request.dto';
 import { RouteDetailResponseDto } from './dto/route-detail-response.dto';
@@ -24,7 +44,9 @@ export class RoutesController {
   ) {}
 
   @Post()
-  async getAllRoutes(@Body() dto: RouteRequestDto): Promise<AllRoutesSummaryResponseDto> {
+  async getAllRoutes(
+    @Body() dto: RouteRequestDto,
+  ): Promise<AllRoutesSummaryResponseDto> {
     this.logger.log(`getAllRoutes request received: ${JSON.stringify(dto)}`);
     // 1) 모든 경로 raw 데이터 조회
     const rawRoutes = await this.routesService.getAllRoutes(
@@ -37,16 +59,18 @@ export class RoutesController {
       },
     );
     // 2) cache에 저장 (TTL 60초) - hash 기반 키
-    const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date||''}|${dto.time||''}|${dto.arriveBy}`;
+    const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}|${dto.arriveBy}`;
     const hash = createHash('md5').update(rawKey).digest('hex');
     const cacheKey = `routes:${hash}`;
-    this.logger.log(`Caching rawRoutes with key: ${cacheKey}, rawKey: ${rawKey}`);
+    this.logger.log(
+      `Caching rawRoutes with key: ${cacheKey}, rawKey: ${rawKey}`,
+    );
     await this.cacheManager.set(cacheKey, rawRoutes, 500 * 1000);
     // 3) summary DTO 생성
-    const summaryRoutes: RouteSummaryDto[] = []; 
+    const summaryRoutes: RouteSummaryDto[] = [];
     Object.entries(rawRoutes).forEach(([category, routeList]) => {
-      (routeList as any[]).forEach(route => {
-        const main = (route as any).main;
+      (routeList as any[]).forEach((route) => {
+        const main = route.main;
         summaryRoutes.push({
           category,
           duration: main.duration,
@@ -82,7 +106,9 @@ export class RoutesController {
   }
 
   @Post('save')
-  async saveRoute(@Body() payload: any): Promise<{ message: string; id: string }> {
+  async saveRoute(
+    @Body() payload: any,
+  ): Promise<{ message: string; id: string }> {
     console.log('[RoutesController] saveRoute payload:', payload);
     const saved = await this.savedRouteRepo.save({ payload });
     return { message: 'Route saved successfully', id: saved.id };
@@ -114,7 +140,9 @@ export class RoutesController {
     this.logger.log(`Cache lookup result: ${all ? 'HIT' : 'MISS'}`);
     if (!all) {
       this.logger.warn(`No cached routes for key: ${summaryKey}`);
-      throw new BadRequestException('캐시된 경로 정보가 없습니다. 먼저 요약 경로를 조회해주세요.');
+      throw new BadRequestException(
+        '캐시된 경로 정보가 없습니다. 먼저 요약 경로를 조회해주세요.',
+      );
     }
     // 선택된 category에 해당하는 경로 리스트 조회
     const list = all[category];
@@ -124,7 +152,7 @@ export class RoutesController {
     const length = list.length;
     if (index < 0 || index >= length) {
       throw new BadRequestException(
-        `Invalid index ${index} for category "${category}". Valid range: 0 to ${length - 1}`
+        `Invalid index ${index} for category "${category}". Valid range: 0 to ${length - 1}`,
       );
     }
     const selected = list[index];
