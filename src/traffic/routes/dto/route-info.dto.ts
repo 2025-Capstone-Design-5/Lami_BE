@@ -65,6 +65,14 @@ export class MainRouteDto {
   @IsNumber()
   transferCount: number;
 
+  @IsString()
+  @IsOptional()
+  startvehicletime?: string;
+
+  @IsString()
+  @IsOptional()
+  routetp?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TransferDto)
@@ -82,6 +90,18 @@ export class MainRouteDto {
   @IsOptional()
   @IsObject()
   forecast?: any;
+
+  @IsString()
+  @IsOptional()
+  cityCode?: string;
+
+  @IsString()
+  @IsOptional()
+  departureStopId?: string;
+
+  @IsString()
+  @IsOptional()
+  busId?: string;
 }
 
 /**

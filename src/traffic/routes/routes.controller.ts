@@ -60,6 +60,11 @@ export class RoutesController {
           trafficItems: main.trafficItems,
           forecast: main.forecast,
           stops: main.stops,
+          startvehicletime: main.startvehicletime,
+          routetp: main.routetp,
+          cityCode: main.cityCode,
+          departureStopId: main.departureStopId,
+          busId: main.busId,
         });
       });
     });

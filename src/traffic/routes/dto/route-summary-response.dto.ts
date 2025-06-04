@@ -47,6 +47,21 @@ export class RouteSummaryDto {
   @IsArray()
   @IsString({ each: true })
   stops: string[];
+
+  @IsString()
+  startvehicletime?: string;
+
+  @IsString()
+  routetp?: string;
+
+  @IsString()
+  cityCode?: string;
+
+  @IsString()
+  departureStopId?: string;
+
+  @IsString()
+  busId?: string;
 }
 
 export class AllRoutesSummaryDataDto {
