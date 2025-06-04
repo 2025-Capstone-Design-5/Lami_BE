@@ -77,6 +77,8 @@ export class RoutesService {
       optimize: options?.optimize ?? 'TRIANGLE',
 
       showIntermediateStops: true,
+
+      locale: 'ko', 
     };
     // mode, transitModes에 공백 포함 시 정리 (예: 'WALK, TRANSIT' -> 'WALK,TRANSIT')
     if (typeof params.mode === 'string') {
