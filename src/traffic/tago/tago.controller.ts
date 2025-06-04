@@ -40,4 +40,21 @@ export class TagoController {
     );
     return response.data;
   }
+
+  /**
+   * 노선 기본 정보 조회
+   */
+  @Get('route-info')
+  async getRouteInfoItem(
+    @Query('cityCode') cityCode: string,
+    @Query('routeId') routeId: string,
+    @Query('_type') type: 'xml' | 'json' = 'json',
+  ): Promise<any> {
+    const response = await this.tagoService.getRouteInfoItem(
+      cityCode,
+      routeId,
+      type,
+    );
+    return response.data;
+  }
 }
