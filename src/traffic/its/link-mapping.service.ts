@@ -27,32 +27,37 @@ export class LinkMappingService implements OnModuleInit {
   private linkSectionMap: Map<string, string> = new Map();
 
   async onModuleInit() {
-    // 1) 링크 R-Tree 구축
+    // 1) GeoJSON 파일이 존재하는 경우만 링크 R-Tree 구축
+    const filePath = path.resolve(__dirname, '../data/moct_link.geojson');
+    if (!fs.existsSync(filePath)) {
+      console.warn(
+        `[LinkMappingService] geojson 파일이 없어 로드 스킵: ${filePath}`,
+      );
+      return;
+    }
+    // 링크 R-Tree 구축
     let linkCount = 0;
-    await this.loadGeojsonToTree(
-      path.resolve(__dirname, '../data/moct_link.geojson'),
-      (feat: Feature<any>) => {
-        const props = feat.properties as Record<string, any>;
-        const id = (props.LINK_ID ?? props.linkId)?.toString();
-        if (!id) return;
-        const [minX, minY, maxX, maxY] = bbox(feat);
-        const cx = (minX + maxX) / 2;
-        const cy = (minY + maxY) / 2;
-        const item: LinkItem = { minX, minY, maxX, maxY, linkId: id, cx, cy };
-        this.linkTree.insert(item);
-        this.linkItemMap.set(id, item);
-        // ROAD_NO 필드를 sectionId로 매핑 (숫자가 아닌 값은 제외)
-        const rawSection = (
-          props.ROAD_NO ??
-          props.ROADNO ??
-          props.road_no
-        )?.toString();
-        if (rawSection && /^\d+$/.test(rawSection)) {
-          this.linkSectionMap.set(id, rawSection);
-        }
-        linkCount++;
-      },
-    );
+    await this.loadGeojsonToTree(filePath, (feat: Feature<any>) => {
+      const props = feat.properties as Record<string, any>;
+      const id = (props.LINK_ID ?? props.linkId)?.toString();
+      if (!id) return;
+      const [minX, minY, maxX, maxY] = bbox(feat);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const item: LinkItem = { minX, minY, maxX, maxY, linkId: id, cx, cy };
+      this.linkTree.insert(item);
+      this.linkItemMap.set(id, item);
+      // ROAD_NO 필드를 sectionId로 매핑 (숫자가 아닌 값은 제외)
+      const rawSection = (
+        props.ROAD_NO ??
+        props.ROADNO ??
+        props.road_no
+      )?.toString();
+      if (rawSection && /^\d+$/.test(rawSection)) {
+        this.linkSectionMap.set(id, rawSection);
+      }
+      linkCount++;
+    });
     console.log(`✔ LinkMappingService: loaded ${linkCount} link items`);
   }
 

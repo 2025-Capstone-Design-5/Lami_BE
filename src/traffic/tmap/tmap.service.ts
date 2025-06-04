@@ -21,7 +21,9 @@ export class TmapService {
     };
 
     // Tmap API 가이드에 따른 URL 인코딩 및 retry 로직
-    const baseUrl = process.env.GEOCODING_URL || 'https://apis.openapi.sk.com/tmap/geo/geocoding';
+    const baseUrl =
+      process.env.GEOCODING_URL ||
+      'https://apis.openapi.sk.com/tmap/geo/geocoding';
     const version = '1';
     const coordType = process.env.TMAP_COORD_TYPE || 'WGS84GEO';
     const appKey = process.env.TMAP_API_KEY || '';
@@ -30,17 +32,20 @@ export class TmapService {
     let rawData: any;
     try {
       const response = await firstValueFrom(
-        this.httpService.get<any>(urlWithParams, {
-          headers: { Accept: 'application/json' },
-        }).pipe(
-          retryWhen(errors => errors.pipe(delay(2000), take(3)))
-        ),
+        this.httpService
+          .get<any>(urlWithParams, {
+            headers: { Accept: 'application/json' },
+          })
+          .pipe(retryWhen((errors) => errors.pipe(delay(2000), take(3)))),
       );
       console.log('[TmapService.geocode] Raw response:', response.data);
       rawData = response.data;
     } catch (error: any) {
       // 내부 로그를 간소화하여 메시지만 출력
-      console.error('[TmapService.geocode] HTTP 요청 실패:', error.message ?? error.toString());
+      console.error(
+        '[TmapService.geocode] HTTP 요청 실패:',
+        error.message ?? error.toString(),
+      );
       throw new HttpException(
         'Tmap 지오코딩 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
         HttpStatus.SERVICE_UNAVAILABLE,

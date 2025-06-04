@@ -66,4 +66,52 @@ export class TagoService {
     };
     return firstValueFrom(this.httpService.get(url, params));
   }
+
+  /**
+   * 노선 기본 정보 조회 (버스노선정보조회 서비스)
+   */
+  async getRouteInfoItem(
+    cityCode: string,
+    routeId: string,
+    type: 'xml' | 'json' = 'json',
+  ): Promise<any> {
+    const url =
+      'http://apis.data.go.kr/1613000/BusRouteInfoInqireService/getRouteInfoIem';
+    const params: AxiosRequestConfig = {
+      params: {
+        serviceKey: process.env.TAGO_API_KEY!,
+        _type: type,
+        cityCode: cityCode,
+        routeId: routeId,
+      },
+      timeout: 10000, // 10초 타임아웃
+    };
+
+    console.log(`[TagoService] Calling getRouteInfoItem with URL: ${url}`);
+    console.log(`[TagoService] Params:`, params.params);
+    console.log(
+      `[TagoService] Using serviceKey: ${process.env.TAGO_API_KEY?.substring(0, 10)}...`,
+    );
+
+    try {
+      const response = await firstValueFrom(this.httpService.get(url, params));
+      console.log(`[TagoService] Response status: ${response.status}`);
+      console.log(`[TagoService] Response data type:`, typeof response.data);
+      console.log(
+        `[TagoService] Response data:`,
+        JSON.stringify(response.data, null, 2),
+      );
+      return response;
+    } catch (error) {
+      console.error(
+        `[TagoService] Error calling getRouteInfoItem:`,
+        error.message,
+      );
+      if (error.response) {
+        console.error(`[TagoService] Error status:`, error.response.status);
+        console.error(`[TagoService] Error response:`, error.response.data);
+      }
+      throw error;
+    }
+  }
 }

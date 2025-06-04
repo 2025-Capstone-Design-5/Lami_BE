@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import * as polyline from '@mapbox/polyline';
 import { firstValueFrom } from 'rxjs';
@@ -6,7 +6,10 @@ import { TmapService } from '../tmap/tmap.service';
 import { TagoService } from '../tago/tago.service';
 import { ItsService } from '../its/its.service';
 import { LinkMappingService } from '../its/link-mapping.service';
-import { AllRoutesDataDto } from './dto/all-routes-response.dto';
+import { RouteDto } from './dto/route-info.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Route } from './entities/route.entity';
 
 import {
   OtpPlanResponse,
@@ -14,6 +17,12 @@ import {
   Itinerary,
   Leg,
 } from './interfaces/otp.interfaces';
+
+// 내부 서비스용 RawRoutes 타입 정의
+type RawRoutes = Record<
+  'walk' | 'car' | 'subway' | 'bus' | 'bus_subway',
+  RouteDto[]
+>;
 
 @Injectable()
 export class RoutesService {
@@ -23,6 +32,8 @@ export class RoutesService {
     private readonly tagoService: TagoService,
     private readonly itsService: ItsService,
     private readonly mapper: LinkMappingService,
+    @InjectRepository(Route)
+    private readonly routeRepo: Repository<Route>,
   ) {}
 
   /**
@@ -64,11 +75,13 @@ export class RoutesService {
       // 허용할 최대 도보 거리(m)
       maxWalkDistance: options?.maxWalkDistance ?? 2000,
       // 허용할 최대 환승 횟수
-      maxTransfers: options?.maxTransfers ?? 3,
+      maxTransfers: options?.maxTransfers ?? 4,
       // 경로 최적화 기준 (QUICK, TRANSFERS, TRIANGLE 등)
-      optimize: options?.optimize ?? 'TRIANGLE',
+      optimize: options?.optimize ?? 'QUICK',
 
       showIntermediateStops: true,
+
+      locale: 'ko',
     };
     // mode, transitModes에 공백 포함 시 정리 (예: 'WALK, TRANSIT' -> 'WALK,TRANSIT')
     if (typeof params.mode === 'string') {
@@ -107,7 +120,7 @@ export class RoutesService {
     fromAddress: string,
     toAddress: string,
     options?: { date?: string; time?: string; arriveBy?: boolean },
-  ): Promise<AllRoutesDataDto> {
+  ): Promise<RawRoutes> {
     // 1) 순수 도보, 대중교통, 자동차 경로 병렬 조회
     const [walkPlan, transitPlan, carPlan] = await Promise.all([
       this.getOtpRoutes(fromAddress, toAddress, {
@@ -121,9 +134,10 @@ export class RoutesService {
       this.getOtpRoutes(fromAddress, toAddress, {
         mode: 'TRANSIT,WALK',
         transitModes: 'BUS,SUBWAY',
-        numItineraries: 3,
+        numItineraries: 8,
         optimize: 'QUICK',
         maxPreTransitTime: 1200,
+        maxWalkDistance: 3000,
         date: options?.date,
         time: options?.time,
         arriveBy: options?.arriveBy,
@@ -203,11 +217,7 @@ export class RoutesService {
         categories.bus.push(itin);
       }
     }
-    // 각 카테고리별 개수 제한 (subway, bus, bus_subway만 2개 이하)
-    const limit = (list: Itinerary[]) => list.slice(0, 2);
-    categories.subway = limit(categories.subway);
-    categories.bus = limit(categories.bus);
-    categories.bus_subway = limit(categories.bus_subway);
+
     // Itinerary -> RouteDto 변환 함수
     const mapItinToRoute = async (itin: Itinerary) => {
       const legs: Leg[] = itin.legs ?? [];
@@ -253,49 +263,198 @@ export class RoutesService {
       );
       if (transitLegs.length)
         stops.push(transitLegs[transitLegs.length - 1].to.name);
-      // 실시간 도착 예상 시간 조회
-      const rawRealtimeArrival: (number | null)[] = await Promise.all(
-        transitLegs.map(async (leg: Leg) => {
-          if (leg.mode === 'SUBWAY') {
-            const start = leg.startTime ?? now;
-            return Math.max(0, Math.floor((start - now) / 1000));
-          }
-          try {
-            const nodeId = leg.from.stopId?.split('TAGO_')[1] ?? '';
-            // routeId가 없으면 routeShortName(버스 번호)으로 대체
-            const routeId =
-              leg.routeId?.split('TAGO_')[1] ?? leg.routeShortName ?? '';
-            const cityCode = await this.tagoService.getCityCodeFromBusStop(
-              leg.from.lat.toString(),
-              leg.from.lon.toString(),
-              nodeId,
-            );
+      // 실시간 도착 예상 시간 조회 및 노선 정보 수집
+      const rawRealtimeArrival: (number | null)[] = [];
+      const routeInfos: any[] = [];
+      let extractedStartVehicleTime: string | undefined;
+      let extractedRouteType: string | undefined;
+      let extractedCityCode: string | undefined;
+      let extractedDepartureStopId: string | undefined;
+      let extractedBusId: string | undefined;
+
+      for (const leg of transitLegs) {
+        if (leg.mode === 'SUBWAY') {
+          const start = leg.startTime ?? now;
+          rawRealtimeArrival.push(
+            Math.max(0, Math.floor((start - now) / 1000)),
+          );
+          continue;
+        }
+
+        try {
+          const nodeId = leg.from.stopId?.split('TAGO_')[1] ?? '';
+          // routeId가 없으면 routeShortName(버스 번호)으로 대체
+          const routeId =
+            leg.routeId?.split('TAGO_')[1] ?? leg.routeShortName ?? '';
+
+          // 첫 번째 버스 leg에서만 정보 추출
+          if (!extractedDepartureStopId && nodeId) {
+            extractedDepartureStopId = nodeId;
             console.log(
-              `[getAllRoutes][BusArrivals] Requesting Tago realtime for nodeId=${nodeId}, routeId=${routeId}`,
+              `[getAllRoutes][BusInfo] Extracted departureStopId: ${extractedDepartureStopId}`,
             );
-            const res = await this.tagoService.getRealtimeBusArrivals(
+          }
+          if (!extractedBusId && routeId) {
+            extractedBusId = routeId;
+            console.log(
+              `[getAllRoutes][BusInfo] Extracted busId: ${extractedBusId}`,
+            );
+          }
+
+          const cityCode = await this.tagoService.getCityCodeFromBusStop(
+            leg.from.lat.toString(),
+            leg.from.lon.toString(),
+            nodeId,
+          );
+
+          if (!extractedCityCode && cityCode) {
+            extractedCityCode = cityCode;
+            console.log(
+              `[getAllRoutes][BusInfo] Extracted cityCode: ${extractedCityCode}`,
+            );
+          }
+
+          console.log(
+            `[getAllRoutes][BusArrivals] Requesting Tago realtime for nodeId=${nodeId}, routeId=${routeId}`,
+          );
+          const res = await this.tagoService.getRealtimeBusArrivals(
+            cityCode,
+            nodeId,
+            routeId,
+          );
+          console.log(
+            `[getAllRoutes][BusArrivals] Raw Tago response for nodeId=${nodeId}, routeId=${routeId}:`,
+            res.data,
+          );
+
+          // 버스 노선 기본 정보 조회
+          try {
+            console.log(
+              `[getAllRoutes][RouteInfo] Attempting to get route info for cityCode=${cityCode}, routeId=${routeId}`,
+            );
+            const routeInfoRes = await this.tagoService.getRouteInfoItem(
               cityCode,
-              nodeId,
               routeId,
             );
             console.log(
-              `[getAllRoutes][BusArrivals] Raw Tago response for nodeId=${nodeId}, routeId=${routeId}:`,
-              res.data,
+              `[getAllRoutes][RouteInfo] Route info response for cityCode=${cityCode}, routeId=${routeId}:`,
+              JSON.stringify(routeInfoRes.data, null, 2),
             );
-            const items = res.data.response.body.items?.item;
-            const list = Array.isArray(items) ? items : items ? [items] : [];
-            const earliest =
-              list.length > 0
-                ? list.reduce((prev: any, curr: any) =>
-                    curr.arrtime < prev.arrtime ? curr : prev,
-                  )
-                : null;
-            return earliest?.arrtime ?? null;
-          } catch {
-            return null;
+
+            // XML 응답인 경우 파싱 시도
+            const routeInfo = routeInfoRes.data?.response?.body?.items?.item;
+            const isError =
+              typeof routeInfoRes.data === 'string' &&
+              routeInfoRes.data.includes('SERVICE_ACCESS_DENIED_ERROR');
+
+            if (routeInfo && !isError) {
+              // 중복 제거를 위해 routeId로 확인
+              const existingRoute = routeInfos.find(
+                (info) => info.routeid === routeInfo.routeid,
+              );
+              if (!existingRoute) {
+                routeInfos.push({
+                  ...routeInfo,
+                  routeShortName: leg.routeShortName, // 버스 번호도 함께 저장
+                });
+                console.log(
+                  `[getAllRoutes][RouteInfo] Added route info to main for route ${routeId}`,
+                );
+              }
+
+              // startvehicletime과 routetp 추출 (노선 정보가 유효할 때만)
+              if (!extractedStartVehicleTime && routeInfo.startvehicletime) {
+                // TAGO API는 HHMM 형식으로 제공 (예: "0600") -> HH:MM:SS 형식으로 변환
+                const timeStr = routeInfo.startvehicletime
+                  .toString()
+                  .padStart(4, '0');
+                const hours = timeStr.substring(0, 2);
+                const minutes = timeStr.substring(2, 4);
+                extractedStartVehicleTime = `${hours}:${minutes}:00`;
+                console.log(
+                  `[getAllRoutes][RouteInfo] Extracted startvehicletime from TAGO API: ${routeInfo.startvehicletime} -> ${extractedStartVehicleTime}`,
+                );
+              }
+              if (!extractedRouteType && routeInfo.routetp) {
+                extractedRouteType = routeInfo.routetp;
+                console.log(
+                  `[getAllRoutes][RouteInfo] Extracted routetp from TAGO API: ${extractedRouteType}`,
+                );
+              }
+
+              // 노선 정보에서 다른 필드들도 확인 (endvehicletime 등)
+              if (!extractedStartVehicleTime) {
+                const altTimeFields = [
+                  routeInfo.firstVehicleTime,
+                  routeInfo.firstvehicletime,
+                  routeInfo.startVehicleTime,
+                  routeInfo.endvehicletime, // 막차시간도 확인
+                ];
+
+                for (const timeField of altTimeFields) {
+                  if (timeField) {
+                    const timeStr = timeField.toString().padStart(4, '0');
+                    const hours = timeStr.substring(0, 2);
+                    const minutes = timeStr.substring(2, 4);
+                    extractedStartVehicleTime = `${hours}:${minutes}:00`;
+                    console.log(
+                      `[getAllRoutes][RouteInfo] Extracted startvehicletime from alternative field: ${timeField} -> ${extractedStartVehicleTime}`,
+                    );
+                    break;
+                  }
+                }
+              }
+            } else {
+              console.warn(
+                `[getAllRoutes][RouteInfo] Failed to get valid route info - Error response or access denied`,
+              );
+              // API 접근 실패 시 기본값 설정 (HH:MM:SS 형식)
+              if (!extractedStartVehicleTime) {
+                extractedStartVehicleTime = '05:30:00'; // 일반적인 버스 첫 운행 시간
+                console.log(
+                  `[getAllRoutes][RouteInfo] Set default startvehicletime: ${extractedStartVehicleTime}`,
+                );
+              }
+            }
+          } catch (error) {
+            console.warn(
+              `[getAllRoutes][RouteInfo] Failed to get route info for cityCode=${cityCode}, routeId=${routeId}:`,
+              error.message,
+            );
+            // API 호출 실패 시 기본값 설정
+            if (!extractedStartVehicleTime) {
+              extractedStartVehicleTime = '05:30:00'; // 일반적인 버스 첫 운행 시간
+              console.log(
+                `[getAllRoutes][RouteInfo] Set fallback startvehicletime: ${extractedStartVehicleTime}`,
+              );
+            }
           }
-        }),
-      );
+
+          const items = res.data.response.body.items?.item;
+          const list = Array.isArray(items) ? items : items ? [items] : [];
+          const earliest =
+            list.length > 0
+              ? list.reduce((prev: any, curr: any) =>
+                  curr.arrtime < prev.arrtime ? curr : prev,
+                )
+              : null;
+
+          // 실시간 버스 정보에서 routetp 추출
+          if (earliest) {
+            if (!extractedRouteType && earliest.routetp) {
+              extractedRouteType = earliest.routetp;
+              console.log(
+                `[getAllRoutes][BusArrivals] Extracted routetp from realtime: ${extractedRouteType}`,
+              );
+            }
+          }
+
+          rawRealtimeArrival.push(earliest?.arrtime ?? null);
+        } catch {
+          rawRealtimeArrival.push(null);
+        }
+      }
+
       const realtimeArrivalTimes: number[] = rawRealtimeArrival.filter(
         (t): t is number => t !== null,
       );
@@ -314,7 +473,22 @@ export class RoutesService {
         transferCount: transfers.length,
         transfers,
         realtimeArrivalTimes,
+        routeInfos,
+        startvehicletime: extractedStartVehicleTime,
+        routetp: extractedRouteType,
+        cityCode: extractedCityCode,
+        departureStopId: extractedDepartureStopId,
+        busId: extractedBusId,
       };
+
+      console.log(`[getAllRoutes][Main] Final main object for route:`, {
+        startvehicletime: extractedStartVehicleTime,
+        routetp: extractedRouteType,
+        cityCode: extractedCityCode,
+        departureStopId: extractedDepartureStopId,
+        busId: extractedBusId,
+        routeShortNames: main.routeShortNames,
+      });
       const sub = legs.map((l) => ({
         mode: l.mode,
         transitLeg: l.transitLeg,
@@ -324,6 +498,7 @@ export class RoutesService {
         steps: l.steps,
         // intermediateStops 포함
         intermediateStops: (l as any).intermediateStops ?? [],
+        // routeInfo는 이제 main에 집계되므로 sub에서 제거
       }));
       return { main, sub };
     };
@@ -336,13 +511,13 @@ export class RoutesService {
       categories.bus_subway.map(mapItinToRoute),
     );
     // ITS 정보 통합 (중복 호출 제거)
-    const allRoutes: AllRoutesDataDto = { walk, car, subway, bus, bus_subway };
+    const allRoutes: RawRoutes = { walk, car, subway, bus, bus_subway };
     // 1) Bounding Box 별 실시간 교통 호출 준비
     const rtPromises = new Map<string, Promise<any>>();
     // 2) 고유 섹션ID 별 예측정보 호출 준비
     const fcSectionIds = new Set<string>();
     // 라우트별 메타데이터 저장 (its.controller와 동일 logic 적용)
-    for (const key of Object.keys(allRoutes) as (keyof AllRoutesDataDto)[]) {
+    for (const key of Object.keys(allRoutes) as (keyof RawRoutes)[]) {
       for (const route of allRoutes[key]) {
         // 오직 transitLeg(버스/트램 포함) 경로만 처리
         const transitSub = (route.sub || []).filter((s) => s.transitLeg);
@@ -390,18 +565,12 @@ export class RoutesService {
         });
       }
     }
-    // 실시간 교통정보 호출 실행 및 결과 수집
+    // 실시간 교통정보 호출 실행 및 결과 수집 (parallel)
     const rtResults = new Map<string, any[]>();
-    for (const [key, promise] of rtPromises) {
-      console.log(
-        `[getAllRoutes][ITS] Awaiting realtime promise for bboxKey=${key}`,
-      );
-      const rt = await promise;
-      console.log(
-        `[getAllRoutes][ITS] Raw ITS response for bboxKey=${key}:`,
-        rt,
-      );
-      // its.controller와 동일한 parsing 로직 적용
+    const rtEntries = Array.from(rtPromises.entries());
+    const rtResponses = await Promise.all(rtEntries.map(([, p]) => p));
+    rtResponses.forEach((rt, idx) => {
+      const key = rtEntries[idx][0];
       const body = rt?.response?.body ?? rt?.body ?? rt;
       const rawItems = body?.items?.item ?? body?.items ?? [];
       const itemsArr = Array.isArray(rawItems)
@@ -409,38 +578,36 @@ export class RoutesService {
         : rawItems
           ? [rawItems]
           : [];
-      console.log(
-        `[getAllRoutes][ITS] Parsed ITS items for bboxKey=${key}:`,
-        itemsArr,
-      );
       rtResults.set(key, itemsArr);
-    }
-    // 예측정보 호출 준비 및 실행
+    });
+    // 예측정보 호출 준비 및 실행 (parallel)
     const fCastDate = options?.date
       ? options.date.replace(/-/g, '')
       : new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const fCastHour = options?.time
       ? options.time
       : new Date().getHours().toString().padStart(2, '0');
-    const fcPromises = new Map<string, Promise<any>>();
-    for (const sec of fcSectionIds) {
-      fcPromises.set(
-        sec,
-        this.itsService.getForecastInfo({
-          sectionId: sec,
-          fCastDate,
-          fCastHour,
-          getType: 'json',
-        }),
-      );
-    }
+    const fcEntries = Array.from(fcSectionIds).map(
+      (sec) =>
+        [
+          sec,
+          this.itsService.getForecastInfo({
+            sectionId: sec,
+            fCastDate,
+            fCastHour,
+            getType: 'json',
+          }),
+        ] as [string, Promise<any>],
+    );
     const fcResults = new Map<string, any>();
-    for (const [sec, promise] of fcPromises) {
-      const fc = await promise;
-      fcResults.set(sec, fc?.response?.body ?? fc?.body ?? fc);
-    }
+    const fcResponses = await Promise.all(fcEntries.map(([, p]) => p));
+    fcResponses.forEach((fc, idx) => {
+      const sec = fcEntries[idx][0];
+      const result = fc?.response?.body ?? fc?.body ?? fc;
+      fcResults.set(sec, result);
+    });
     // 결과를 각 라우트에 할당
-    for (const key of Object.keys(allRoutes) as (keyof AllRoutesDataDto)[]) {
+    for (const key of Object.keys(allRoutes) as (keyof RawRoutes)[]) {
       for (const route of allRoutes[key]) {
         // linkIdSet이 없으면 ITS 로직 건너뛰고 기본값 설정
         const linkIdSet = (route as any)._linkIdSet as Set<string> | undefined;
@@ -496,5 +663,19 @@ export class RoutesService {
       }
     }
     return allRoutes;
+  }
+
+  /**
+   * 저장된 경로 상세 조회
+   */
+  async getRouteDetailById(routeId: string): Promise<Route> {
+    const route = await this.routeRepo.findOne({
+      where: { id: routeId },
+      relations: ['realtimeParams'],
+    });
+    if (!route) {
+      throw new NotFoundException(`Route ${routeId} not found`);
+    }
+    return route;
   }
 }
