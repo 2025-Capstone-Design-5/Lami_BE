@@ -1,18 +1,10 @@
-import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  ManyToOne,
-  OneToMany,
-} from 'typeorm';
-import { SavedRoute } from './saved-route.entity';
-import { RouteRealtimeParam } from './route-realtime-param.entity';
+import { Entity, Column, ManyToOne, OneToMany } from 'typeorm';
+import { BaseIdEntity } from '@/common/entities/base-id.entity';
+import { SavedRoute } from '@/traffic/routes/entities/saved-route.entity';
+import { RouteRealtimeParam } from '@/traffic/routes/entities/route-realtime-param.entity';
 
 @Entity('routes')
-export class Route {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class Route extends BaseIdEntity {
   @ManyToOne(() => SavedRoute, (savedRoute) => savedRoute.routes, {
     onDelete: 'CASCADE',
   })

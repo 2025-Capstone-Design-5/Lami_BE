@@ -10,14 +10,14 @@ async function bootstrap() {
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   // Set HTTP server timeout settings to prevent premature connection resets
-  const httpServer: any = app.getHttpServer();
-  httpServer.keepAliveTimeout = 30000; // 30 seconds
-  httpServer.headersTimeout = 65000; // 65 seconds
-  console.log(
-    '[Main] HTTP server keepAliveTimeout:',
-    httpServer.keepAliveTimeout,
-  );
-  console.log('[Main] HTTP server headersTimeout:', httpServer.headersTimeout);
+  // const httpServer: any = app.getHttpServer();
+  // httpServer.keepAliveTimeout = 30000; // 30 seconds
+  // httpServer.headersTimeout = 65000; // 65 seconds
+  // console.log(
+  //   '[Main] HTTP server keepAliveTimeout:',
+  //   httpServer.keepAliveTimeout,
+  // );
+  // console.log('[Main] HTTP server headersTimeout:', httpServer.headersTimeout);
   await app.listen(process.env.PORT ?? 3000);
   console.log('[Main] Application listening on port', process.env.PORT ?? 3000);
 }

@@ -1,22 +1,11 @@
-import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  CreateDateColumn,
-  OneToMany,
-} from 'typeorm';
-import { Route } from './route.entity';
+import { Entity, Column, OneToMany } from 'typeorm';
+import { BaseCreateEntity } from '@/common/entities/base-create.entity';
+import { Route } from '@/traffic/routes/entities/route.entity';
 
 @Entity('saved_routes')
-export class SavedRoute {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class SavedRoute extends BaseCreateEntity {
   @Column({ type: 'json' })
   payload: any;
-
-  @CreateDateColumn()
-  createdAt: Date;
 
   @OneToMany(() => Route, (route) => route.savedRoute, { cascade: true })
   routes: Route[];

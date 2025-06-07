@@ -1,22 +1,17 @@
 import {
   Entity,
   Column,
-  PrimaryGeneratedColumn,
   ManyToOne,
   ManyToMany,
   JoinColumn,
   JoinTable,
-  CreateDateColumn,
-  UpdateDateColumn,
 } from 'typeorm';
-import { User } from '../../users/user.entity';
-import { Category } from './category.entity';
+import { BaseTimestampEntity } from '@/common/entities/base-timestamp.entity';
+import { User } from '@/users/user.entity';
+import { Category } from '@/favorites/entities/category.entity';
 
 @Entity('favorite_routes')
-export class FavoriteRoute {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
+export class FavoriteRoute extends BaseTimestampEntity {
   @Column()
   name: string;
 
@@ -32,12 +27,6 @@ export class FavoriteRoute {
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'userId' })
   user: User;
-
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
 
   @ManyToMany(() => Category, (category) => category.favoriteRoutes, {
     eager: true,
