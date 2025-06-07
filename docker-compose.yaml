@@ -1,8 +1,7 @@
-version: "2.4"
 services:
   db:
     image: postgres:14
-    restart: "no"
+    restart: 'no'
     env_file:
       - .env
     environment:
@@ -19,7 +18,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: "no"
+    restart: 'no'
     env_file:
       - .env
     environment:
@@ -43,4 +42,4 @@ services:
       - '3000:3000'
 
 volumes:
-  postgres-data: 
+  postgres-data:
