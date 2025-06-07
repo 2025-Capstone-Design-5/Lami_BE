@@ -97,11 +97,11 @@ export class MainRouteDto {
 
   @IsString()
   @IsOptional()
-  departureStopId?: string;
+  nodeId?: string;
 
   @IsString()
   @IsOptional()
-  busId?: string;
+  routeId?: string;
 }
 
 /**

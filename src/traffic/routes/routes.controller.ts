@@ -9,6 +9,7 @@ import {
   Inject,
   BadRequestException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -31,6 +32,7 @@ import type { Cache } from 'cache-manager';
 import { RouteDetailRequestDto } from './dto/route-detail-request.dto';
 import { RouteDetailResponseDto } from './dto/route-detail-response.dto';
 import { createHash } from 'crypto';
+import { UsersService } from '@/users/users.service';
 
 @Controller('traffic/routes')
 export class RoutesController {
@@ -41,6 +43,7 @@ export class RoutesController {
     private readonly savedRouteRepo: Repository<SavedRoute>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    private readonly usersService: UsersService,
   ) {}
 
   @Post()
@@ -87,8 +90,8 @@ export class RoutesController {
           startvehicletime: main.startvehicletime,
           routetp: main.routetp,
           cityCode: main.cityCode,
-          departureStopId: main.departureStopId,
-          busId: main.busId,
+          nodeId: main.nodeId,
+          routeId: main.routeId,
         });
       });
     });
@@ -110,7 +113,15 @@ export class RoutesController {
     @Body() payload: any,
   ): Promise<{ message: string; id: string }> {
     console.log('[RoutesController] saveRoute payload:', payload);
-    const saved = await this.savedRouteRepo.save({ payload });
+    const { googleId, ...data } = payload;
+    const user = await this.usersService.findByGoogleId(googleId);
+    if (!user) {
+      throw new NotFoundException(`User with googleId ${googleId} not found`);
+    }
+    const saved = await this.savedRouteRepo.save({
+      userId: user.id,
+      ...data,
+    });
     return { message: 'Route saved successfully', id: saved.id };
   }
 

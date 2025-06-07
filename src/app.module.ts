@@ -14,8 +14,6 @@ import { LlmModule } from './llm/llm.module';
 import { VoiceModule } from './voice/voice.module';
 import { AlarmModule } from './alarm/alarm.module';
 import { ChatModule } from './chat/chat.module';
-import { FavoritesModule } from './favorites/favorites.module';
-import { CategoriesModule } from './favorites/categories.module';
 @Module({
   imports: [
     CacheModule.register({
@@ -39,8 +37,6 @@ import { CategoriesModule } from './favorites/categories.module';
     }),
     // Application Modules
     ChatModule,
-    FavoritesModule,
-    CategoriesModule,
     AlarmModule,
     VoiceModule,
     LlmModule,

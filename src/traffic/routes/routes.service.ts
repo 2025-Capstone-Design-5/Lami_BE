@@ -269,8 +269,8 @@ export class RoutesService {
       let extractedStartVehicleTime: string | undefined;
       let extractedRouteType: string | undefined;
       let extractedCityCode: string | undefined;
-      let extractedDepartureStopId: string | undefined;
-      let extractedBusId: string | undefined;
+      let extractedNodeId: string | undefined;
+      let extractedRouteId: string | undefined;
 
       for (const leg of transitLegs) {
         if (leg.mode === 'SUBWAY') {
@@ -288,16 +288,16 @@ export class RoutesService {
             leg.routeId?.split('TAGO_')[1] ?? leg.routeShortName ?? '';
 
           // 첫 번째 버스 leg에서만 정보 추출
-          if (!extractedDepartureStopId && nodeId) {
-            extractedDepartureStopId = nodeId;
+          if (!extractedNodeId && nodeId) {
+            extractedNodeId = nodeId;
             console.log(
-              `[getAllRoutes][BusInfo] Extracted departureStopId: ${extractedDepartureStopId}`,
+              `[getAllRoutes][BusInfo] Extracted nodeId: ${extractedNodeId}`,
             );
           }
-          if (!extractedBusId && routeId) {
-            extractedBusId = routeId;
+          if (!extractedRouteId && routeId) {
+            extractedRouteId = routeId;
             console.log(
-              `[getAllRoutes][BusInfo] Extracted busId: ${extractedBusId}`,
+              `[getAllRoutes][BusInfo] Extracted routeId: ${extractedRouteId}`,
             );
           }
 
@@ -477,17 +477,16 @@ export class RoutesService {
         startvehicletime: extractedStartVehicleTime,
         routetp: extractedRouteType,
         cityCode: extractedCityCode,
-        departureStopId: extractedDepartureStopId,
-        busId: extractedBusId,
+        nodeId: extractedNodeId,
+        routeId: extractedRouteId,
       };
 
       console.log(`[getAllRoutes][Main] Final main object for route:`, {
         startvehicletime: extractedStartVehicleTime,
         routetp: extractedRouteType,
         cityCode: extractedCityCode,
-        departureStopId: extractedDepartureStopId,
-        busId: extractedBusId,
-        routeShortNames: main.routeShortNames,
+        nodeId: extractedNodeId,
+        routeId: extractedRouteId,
       });
       const sub = legs.map((l) => ({
         mode: l.mode,
