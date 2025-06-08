@@ -31,6 +31,7 @@ import {
 import type { Cache } from 'cache-manager';
 import { RouteDetailRequestDto } from './dto/route-detail-request.dto';
 import { RouteDetailResponseDto } from './dto/route-detail-response.dto';
+import { RouteSaveRequestDto } from './dto/route-save-request.dto';
 import { createHash } from 'crypto';
 import { UsersService } from '@/users/users.service';
 
@@ -109,19 +110,49 @@ export class RoutesController {
 
   @Post('save')
   async saveRoute(
-    @Body() payload: any,
+    @Body() dto: RouteSaveRequestDto,
   ): Promise<{ message: string; id: string }> {
-    console.log('[RoutesController] saveRoute payload:', payload);
-    const { googleId, ...data } = payload;
-    const user = await this.usersService.findByGoogleId(googleId);
-    if (!user) {
-      throw new NotFoundException(`User with googleId ${googleId} not found`);
+    this.logger.log(`[RoutesController] saveRoute dto: ${JSON.stringify(dto)}`);
+    try {
+      // Find user by Google ID
+      const user = await this.usersService.findByGoogleId(dto.googleId);
+      if (!user) {
+        throw new NotFoundException(
+          `User with googleId ${dto.googleId} not found`,
+        );
+      }
+      // Prepare entity payload
+      const saved = await this.savedRouteRepo.save({
+        userId: user.id,
+        origin: dto.origin,
+        destination: dto.destination,
+        arrivalTime: new Date(),
+        preparationTime: dto.preparationTime ?? 0,
+        options: dto.options,
+        category: dto.category ?? 'general',
+        route: {
+          summary: dto.summary,
+          detail: dto.detail,
+          cityCode: dto.detail.cityCode?.toString(),
+          routeId: dto.detail.routeId,
+          nodeId: dto.detail.nodeId,
+          linkIds: Array.isArray(dto.detail.trafficItems)
+            ? (dto.detail.trafficItems as any[]).map(
+                (item) => item.linkId || '',
+              )
+            : [],
+          sectionIds: [],
+        },
+      });
+      this.logger.log(
+        `[RoutesController] saveRoute successful: savedRouteId=${saved.id}`,
+      );
+      return { message: 'Route saved successfully', id: saved.id };
+    } catch (error) {
+      // Print full error to console for debugging
+      console.error('[RoutesController] saveRoute error:', error);
+      throw error;
     }
-    const saved = await this.savedRouteRepo.save({
-      userId: user.id,
-      ...data,
-    });
-    return { message: 'Route saved successfully', id: saved.id };
   }
 
   /**
