@@ -10,7 +10,7 @@ import { DynamicTool } from 'langchain/tools';
 export const SelectRouteTool = new DynamicTool({
   name: 'route_selector',
   description:
-    '주어진 routes JSON과 category에서 첫 번째 경로를 선택합니다. 입력: {"routes": ..., "category": "walk"} 형태의 JSON 문자열입니다.',
+    '주어진 routes JSON과 category를 입력받아 해당 카테고리의 첫 번째 경로를 선택해 반환합니다. 입력은 JSON 문자열로 routes 데이터와 category 필드를 포함해야 합니다.',
   func: async (input: string) => {
     // JSON 래핑 처리
     let raw = input;
@@ -65,7 +65,7 @@ export async function createLangchainAgent() {
   const prefix = `당신은 종합 AI 에이전트입니다.
 tools:
 - traffic_routes: 교통 경로를 조회합니다. 입력은 fromAddress, toAddress, date, time 프로퍼티를 가진 JSON 문자열입니다.
-- route_selector: 경로 응답(routes)과 category를 입력받아 해당 카테고리의 첫 번째 경로를 선택해 반환합니다. 입력은 JSON 문자열로 {"routes":...,"category":"walk"} 형태입니다.
+- route_selector: 주어진 routes JSON과 category를 입력받아 해당 카테고리의 첫 번째 경로를 선택해 반환합니다.
 - saved_route_info: 저장된 경로 ID로 실시간 상세 정보를 조회합니다. 입력은 routeId 프로퍼티를 가진 JSON 문자열입니다.
 - calendar_events: 사용자의 캘린더 이벤트를 조회합니다. 입력은 userId 프로퍼티를 가진 JSON 문자열입니다.
 - alerts: 사용자의 알림을 조회합니다. 입력은 userId 프로퍼티를 가진 JSON 문자열입니다.
