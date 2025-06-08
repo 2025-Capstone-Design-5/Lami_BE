@@ -34,6 +34,23 @@ export class LangGraphService {
     return nodeId;
   }
 
+  /**
+   * Get all nodes for a user
+   */
+  getNodes(userId: string) {
+    return this.getGraph(userId).nodes;
+  }
+
+  /**
+   * Clear all memory for a user (nodes and edges)
+   */
+  clearMemory(userId: string) {
+    this.memories.set(userId, { nodes: [], edges: [] });
+  }
+
+  /**
+   * Serialize nodes to a prompt string
+   */
   toPrompt(userId: string): string {
     const graph = this.getGraph(userId);
     return graph.nodes
