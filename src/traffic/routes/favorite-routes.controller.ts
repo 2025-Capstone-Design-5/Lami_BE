@@ -42,7 +42,7 @@ export class FavoriteRoutesController {
       category: dto.category,
     });
     const saved = await this.favoritesRepo.save(favorite);
-    this.alarmService.registerAlarm(dto.wakeUpTime);
+    this.alarmService.registerAlarm(dto.wakeUpTime, 0);
     this.logger.log(`[FavoriteRoutes] created id=${saved.id}`);
     return saved;
   }

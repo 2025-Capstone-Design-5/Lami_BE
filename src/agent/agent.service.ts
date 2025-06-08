@@ -5,12 +5,20 @@ import { RoutesService } from '../traffic/routes/routes.service';
 import { LangGraphService } from './lang-graph.service';
 import OpenAI from 'openai';
 import { firstValueFrom } from 'rxjs';
-import { createLangchainAgent } from './langchain-agent';
+import { createLangchainAgent, SelectRouteTool } from './langchain-agent';
 
 @Injectable()
 export class AgentService {
   // user별 마지막 조회된 경로 저장
   private lastRoutes = new Map<string, any>();
+  // Caches the full route details for a given user
+  public storeLastRoutes(userId: string, routes: any): void {
+    this.lastRoutes.set(userId, routes);
+  }
+  // Retrieves cached route details for a given user
+  public getLastRoutes(userId: string): any | undefined {
+    return this.lastRoutes.get(userId);
+  }
   private openai: OpenAI;
   private readonly logger = new Logger(AgentService.name);
 
@@ -143,6 +151,8 @@ export class AgentService {
         );
         // 마지막 경로 결과 저장
         this.lastRoutes.set(userId, rawRoutes);
+        // 메모리에 경로 결과 저장
+        this.langGraphService.addNode(userId, JSON.stringify(rawRoutes));
         return JSON.stringify(rawRoutes);
       } catch (err: any) {
         this.logger.error('직접 경로 조회 실패', err.message);
@@ -152,21 +162,52 @@ export class AgentService {
     // 4) LangChain 에이전트 처리 (Fallback 포함)
     this.logger.log('Invoking LangChain agent');
     try {
-      // 대화 메모리(이전 메시지 및 응답)를 가져와 입력에 포함
-      const memory = this.langGraphService.toPrompt(userId);
-      const agentInput = memory
-        ? `이전 대화 기록:\n${memory}\n사용자 질문: ${message}`
-        : message;
+      // 대화 메모리(이전 메시지 및 응답)는, 의미 있는 길이의 메시지에 한해 포함
+      const trimmed = message.trim();
+      let agentInput = trimmed;
+      if (trimmed.length > 1) {
+        const memory = this.langGraphService.toPrompt(userId);
+        if (memory.trim().length > 0) {
+          agentInput = `이전 대화 기록:\n${memory}\n사용자 질문: ${message}`;
+        }
+      }
       const agent = await createLangchainAgent();
       const { output } = await agent.invoke({ input: agentInput });
+      // LLM 응답을 메모리에 저장
+      this.langGraphService.addNode(userId, output);
       return output;
     } catch (err: any) {
-      this.logger.error('Error invoking LangChain agent', err.message);
-      this.logger.error(
-        '에이전트 실행 중 오류 발생, fallback 처리',
-        err.message,
-      );
-      // fallback: 간단히 사용자 메시지 반환
+      // API rate limit or quota exceeded: inform user instead of generic error
+      if (
+        err.status === 429 ||
+        err.statusCode === 429 ||
+        err.message.includes('Rate limit') ||
+        err.message.includes('quota')
+      ) {
+        this.logger.warn(
+          'API 한도 초과로 요청을 처리할 수 없습니다',
+          err.message,
+        );
+        return '죄송합니다. 현재 API 사용 한도를 초과했습니다. 잠시 후 다시 시도해주세요.';
+      }
+      // Suppress verbose logging for LLM parsing errors and use warning
+      if (err.message.includes('Could not parse LLM output')) {
+        this.logger.warn('LLM 파싱 오류 발생 - route_selector fallback 실행');
+      } else {
+        this.logger.error('Error invoking LangChain agent', err.message);
+      }
+      // LLM 출력 파싱 실패 시 route_selector 툴로 카테고리 기반 선택
+      if (err.message.includes('Could not parse LLM output')) {
+        const routes = this.lastRoutes.get(userId);
+        if (routes) {
+          // 버스 경로 요청으로 간주하고 bus 카테고리 사용
+          const payload = JSON.stringify({ routes, category: 'bus' });
+          const selected = await SelectRouteTool.func(payload);
+          // 선택된 경로를 메모리에 저장
+          this.langGraphService.addNode(userId, selected);
+          return selected;
+        }
+      }
       return `요청을 처리하는 중 오류가 발생했습니다: ${err.message}`;
     }
   }

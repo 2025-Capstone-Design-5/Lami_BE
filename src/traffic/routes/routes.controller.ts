@@ -34,6 +34,7 @@ import { RouteDetailResponseDto } from './dto/route-detail-response.dto';
 import { RouteSaveRequestDto } from './dto/route-save-request.dto';
 import { createHash } from 'crypto';
 import { UsersService } from '@/users/users.service';
+import { AlarmService } from '@/alarm/alarm.service';
 
 @Controller('traffic/routes')
 export class RoutesController {
@@ -45,6 +46,7 @@ export class RoutesController {
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly usersService: UsersService,
+    private readonly alarmService: AlarmService,
   ) {}
 
   @Post()
@@ -121,13 +123,15 @@ export class RoutesController {
           `User with googleId ${dto.googleId} not found`,
         );
       }
-      // Prepare entity payload
+      // Parse arrivalTime and save route
+      const arrivalDate = new Date(dto.arrivalTime);
+      const prepMinutes = dto.preparationTime ?? 0;
       const saved = await this.savedRouteRepo.save({
         userId: user.id,
         origin: dto.origin,
         destination: dto.destination,
-        arrivalTime: new Date(),
-        preparationTime: dto.preparationTime ?? 0,
+        arrivalTime: arrivalDate,
+        preparationTime: prepMinutes,
         options: dto.options,
         category: dto.category ?? 'general',
         route: {
@@ -146,6 +150,12 @@ export class RoutesController {
       });
       this.logger.log(
         `[RoutesController] saveRoute successful: savedRouteId=${saved.id}`,
+      );
+      // Delegate wake-up time calculation to AlarmService
+      this.alarmService.registerAlarm(
+        user.id,
+        saved.arrivalTime.toISOString(),
+        prepMinutes,
       );
       return { message: 'Route saved successfully', id: saved.id };
     } catch (error) {

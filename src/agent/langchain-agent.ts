@@ -1,5 +1,9 @@
 import { initChatModel } from 'langchain/chat_models/universal';
 import { ZeroShotAgent, AgentExecutor } from 'langchain/agents';
+import { StructuredOutputParser } from 'langchain/output_parsers';
+// Import CallbackManager from LangChain core callbacks
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { CallbackManager } = require('@langchain/core/callbacks/manager');
 import { TrafficTool } from './tools/traffic.tool';
 import { SavedRouteTool } from './tools/saved-route.tool';
 import { CalendarTool } from './tools/calendar.tool';
@@ -34,7 +38,7 @@ export const SelectRouteTool = new DynamicTool({
 /**
  * LLM과 도구를 결합해 에이전트를 생성하는 팩토리 함수
  */
-export async function createLangchainAgent() {
+export async function createLangchainAgent(callbackManager?: any) {
   // Initialize LLM based on provider (OpenAI or Llama)
   let llm;
   const provider = process.env.LLM_PROVIDER || 'openai';
@@ -62,43 +66,57 @@ export async function createLangchainAgent() {
     AlertsTool,
     SelectRouteTool,
   ];
-  const prefix = `당신은 종합 AI 에이전트입니다.
-tools:
-- traffic_routes: 교통 경로를 조회합니다. 입력은 fromAddress, toAddress, date, time 프로퍼티를 가진 JSON 문자열입니다.
-- route_selector: 주어진 routes JSON과 category를 입력받아 해당 카테고리의 첫 번째 경로를 선택해 반환합니다.
-- saved_route_info: 저장된 경로 ID로 실시간 상세 정보를 조회합니다. 입력은 routeId 프로퍼티를 가진 JSON 문자열입니다.
-- calendar_events: 사용자의 캘린더 이벤트를 조회합니다. 입력은 userId 프로퍼티를 가진 JSON 문자열입니다.
-- alerts: 사용자의 알림을 조회합니다. 입력은 userId 프로퍼티를 가진 JSON 문자열입니다.
+  let prefix = `당신은 종합 AI 에이전트입니다.
 
-instructions:
-1) 요청이 인사말(예: 안녕하세요, 안녕 등)일 경우, 도구 호출 없이 인사로만 응답하세요.
-2) 그 외 모든 요청에 대해 반드시 적절한 도구를 호출하세요.
-3) 'time'은 출발 시간을 의미합니다. '도착 기준' 요청도 출발 시간 기준으로 처리하세요.
-4) 절대로 추가 질문을 하지 마세요. 불명확해도 가정하여 계속 진행하세요.
-5) 아래 형식을 엄격히 준수하세요:
-   Question: [원본 질문]
-   Thought: [내부 생각]
-   Action: [도구 이름]
-   Action Input: [JSON 입력]
-   Observation: [도구 실행 결과]
-   ... (필요 시 반복) ...
-   Thought: I now know the final answer
-   Final Answer: [최종 답변]
+다음 형식을 엄격히 준수하여 응답하세요:
+Question: [원본 질문]
+Thought: [내부 생각]
+Action: [도구 이름]
+Action Input: [JSON 입력]
+Observation: [도구 실행 결과]
+... (필요 시 반복) ...
+Thought: I now know the final answer
+Final Answer: [최종 답변]
+
+특별 지침:
+- 응답은 반드시 Action 호출 구조로 시작해야 하며, freeform 답변은 금지됩니다.
+- 요청이 인사말(예: 안녕하세요, 안녕 등)일 경우, 도구 호출 없이 짧게 인사로만 응답하세요.
+- 'time'은 출발 시간을 의미합니다.
+- 절대로 추가 질문을 하지 마세요.
+- 사용자가 '(도보|버스|지하철|자동차) 경로로 갈래'라고 요청하면, route_selector 도구만 호출하고, category 필드에 영어 키 ('walk','bus','subway','car')를 사용하세요.
 `;
+  // JSON만 출력하도록 강제하는 StructuredOutputParser 설정
+  const parser = StructuredOutputParser.fromNamesAndDescriptions({
+    walk: '도보 경로 요약 배열',
+    bus: '버스 경로 요약 배열',
+    car: '자동차 경로 요약 배열',
+    bus_subway: '버스+지하철 경로 요약 배열',
+    subway: '지하철 경로 요약 배열',
+  });
+  const formatInstructions = parser.getFormatInstructions();
+  prefix += `\n${formatInstructions}`;
   const suffix = `\nQuestion: {input}\n{agent_scratchpad}`;
+
   // ZeroShotAgent 묶기 및 Executor 생성
   const zeroAgent = ZeroShotAgent.fromLLMAndTools(llm, tools, {
     prefix,
     suffix,
     inputVariables: ['input', 'agent_scratchpad'],
   });
-  const agent = AgentExecutor.fromAgentAndTools({
+
+  // Create AgentExecutor with optional callbackManager for streaming
+  const executorConfig: any = {
     agent: zeroAgent,
     tools,
+    outputParser: parser, // JSON 출력만 허용
     verbose: true,
     maxIterations: 5, // 최대 5회 도구 호출 허용
     returnIntermediateSteps: false,
     earlyStoppingMethod: 'force',
-  });
-  return agent;
+  };
+  if (callbackManager) {
+    executorConfig.callbackManager = callbackManager;
+  }
+  const agentExecutor = AgentExecutor.fromAgentAndTools(executorConfig);
+  return agentExecutor;
 }

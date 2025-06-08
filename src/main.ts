@@ -5,8 +5,18 @@ import { inspect } from 'util';
 
 async function bootstrap() {
   inspect.defaultOptions.depth = null;
+  // filter out noisy getAllRoutes console logs
+  const originalConsoleLog = console.log;
+  console.log = (...args: any[]) => {
+    const message = args[0];
+    if (typeof message === 'string' && message.startsWith('[getAllRoutes]')) {
+      return; // suppress getAllRoutes logs
+    }
+    originalConsoleLog(...args);
+  };
+  // Disable built-in NestJS logging; we will use console.log for SSE messages
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    logger: false,
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   // Set HTTP server timeout settings to prevent premature connection resets

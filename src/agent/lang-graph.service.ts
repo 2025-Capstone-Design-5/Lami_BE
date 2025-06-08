@@ -53,8 +53,7 @@ export class LangGraphService {
    */
   toPrompt(userId: string): string {
     const graph = this.getGraph(userId);
-    return graph.nodes
-      .map((n) => `${n.id} (${n.timestamp.toISOString()}): ${n.content}`)
-      .join('\n');
+    // Return only the stored content strings for memory context
+    return graph.nodes.map((n) => n.content).join('\n');
   }
 }
