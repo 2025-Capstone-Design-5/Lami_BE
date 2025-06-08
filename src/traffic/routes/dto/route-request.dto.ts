@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
 
 /**
  * 경로 검색 요청 DTO
@@ -33,11 +33,4 @@ export class RouteRequestDto {
   @IsOptional()
   @IsString()
   time?: string;
-
-  /**
-   * true인 경우 date/time에 맞춰 도착하도록 안내합니다.
-   */
-  @IsOptional()
-  @IsBoolean()
-  arriveBy?: boolean;
 }

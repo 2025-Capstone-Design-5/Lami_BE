@@ -7,13 +7,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TrafficModule } from './traffic/traffic.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-import { AlertsModule } from './alerts/alerts.module';
+// import { AlertsModule } from './alerts/alerts.module';
 import { AgentModule } from './agent/agent.module';
 import { CalendarModule } from './calendar/calendar.module';
-import { LlmModule } from './llm/llm.module';
-import { VoiceModule } from './voice/voice.module';
+// // import { LlmModule } from './llm/llm.module';
+// import { VoiceModule } from './voice/voice.module';
 import { AlarmModule } from './alarm/alarm.module';
-import { ChatModule } from './chat/chat.module';
+// import { ChatModule } from './chat/chat.module';
 @Module({
   imports: [
     CacheModule.register({
@@ -36,16 +36,16 @@ import { ChatModule } from './chat/chat.module';
       dropSchema: true, // 개발 시 변경마다 스키마 초기화
     }),
     // Application Modules
-    ChatModule,
+    // ChatModule,
     AlarmModule,
-    VoiceModule,
-    LlmModule,
+    // LlmModule,
     TrafficModule,
     CalendarModule,
     AgentModule,
-    AlertsModule,
+    // AlertsModule,
     UsersModule,
     AuthModule,
+    // AiAgentModule,
   ],
   controllers: [AppController],
   providers: [AppService],

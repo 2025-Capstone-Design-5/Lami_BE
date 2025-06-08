@@ -58,11 +58,10 @@ export class RoutesController {
       {
         date: dto.date,
         time: dto.time,
-        arriveBy: dto.arriveBy,
       },
     );
     // 2) cache에 저장 (TTL 60초) - hash 기반 키
-    const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}|${dto.arriveBy}`;
+    const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}`;
     const hash = createHash('md5').update(rawKey).digest('hex');
     const cacheKey = `routes:${hash}`;
     this.logger.log(

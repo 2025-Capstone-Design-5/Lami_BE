@@ -71,7 +71,7 @@ export class RoutesService {
       mode: options?.mode ?? 'TRANSIT,WALK,CAR',
       transitModes: options?.transitModes ?? 'BUS,SUBWAY',
       maxPreTransitTime: options?.maxPreTransitTime ?? 600,
-      numItineraries: options?.numItineraries ?? 5,
+      numItineraries: options?.numItineraries ?? 4,
       // 허용할 최대 도보 거리(m)
       maxWalkDistance: options?.maxWalkDistance ?? 2000,
       // 허용할 최대 환승 횟수
@@ -134,7 +134,7 @@ export class RoutesService {
       this.getOtpRoutes(fromAddress, toAddress, {
         mode: 'TRANSIT,WALK',
         transitModes: 'BUS,SUBWAY',
-        numItineraries: 8,
+        numItineraries: 4,
         optimize: 'QUICK',
         maxPreTransitTime: 1200,
         maxWalkDistance: 3000,
