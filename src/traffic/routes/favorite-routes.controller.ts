@@ -42,7 +42,29 @@ export class FavoriteRoutesController {
       category: dto.category,
     });
     const saved = await this.favoritesRepo.save(favorite);
-    this.alarmService.registerAlarm(dto.wakeUpTime, 0);
+    // Parse wakeUpTime (HH:mm) into an ISO datetime string
+    let arrivalIso: string;
+    try {
+      const [hourStr, minuteStr] = dto.wakeUpTime.split(':');
+      const hour = parseInt(hourStr, 10);
+      const minute = parseInt(minuteStr, 10);
+      let arrivalDate = new Date();
+      arrivalDate.setHours(hour, minute, 0, 0);
+      // If the time has already passed today, schedule for tomorrow
+      if (arrivalDate < new Date()) {
+        arrivalDate.setDate(arrivalDate.getDate() + 1);
+      }
+      arrivalIso = arrivalDate.toISOString();
+    } catch (err) {
+      this.logger.error(
+        `[FavoriteRoutes] Invalid wakeUpTime format: ${dto.wakeUpTime}`,
+        err.stack,
+      );
+      // Fallback to now
+      arrivalIso = new Date().toISOString();
+    }
+    await this.alarmService.registerAlarm(user.id, arrivalIso, 0);
+
     this.logger.log(`[FavoriteRoutes] created id=${saved.id}`);
     return saved;
   }

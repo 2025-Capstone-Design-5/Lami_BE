@@ -140,6 +140,17 @@ export class AgentController {
             } catch (e) {
               send(JSON.stringify({ error: '요약 파싱 실패' }));
             }
+          } else if (name === 'favorite_routes') {
+            try {
+              // FavoriteRoutesTool에서 반환된 즐겨찾기 배열
+              const favorites = JSON.parse(output);
+              // 즐겨찾기 데이터 전송
+              send(JSON.stringify({ favorites }));
+            } catch (e) {
+              send(JSON.stringify({ error: '즐겨찾기 파싱 실패' }));
+            }
+            // 즐겨찾기 전송 후 스트림 종료
+            observer.complete();
           }
         },
         // 최종 에이전트 응답: StructuredOutputParser로 JSON 검증 후 전송 및 스트림 종료
@@ -157,7 +168,8 @@ export class AgentController {
 
       (async () => {
         try {
-          // 에이전트 생성 및 호출
+          // Provide userId to dynamic tools via environment variable fallback
+          process.env.LANGCHAIN_USER_ID = userId;
           const agent = await createLangchainAgent(callbackManager);
           let agentInput = message.trim();
           const memory = this.langGraphService.toPrompt(userId);
