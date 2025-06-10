@@ -10,6 +10,7 @@ import { RoutePipelineChain } from '../pipelines/route-pipeline.chain';
 import { AlarmPipelineChain } from '../pipelines/alarm-pipeline.chain';
 import { CalendarPipelineChain } from '../pipelines/calendar-pipeline.chain';
 import { FallbackPipelineChain } from '../pipelines/fallback-pipeline.chain';
+import { StreamCallback } from './stream-callback.handler';
 
 @Injectable()
 export class AgentService implements OnModuleInit {
@@ -149,5 +150,29 @@ export class AgentService implements OnModuleInit {
     }
     this.logger.log(`Agent output: ${JSON.stringify(result)}`);
     return result;
+  }
+
+  /**
+   * Run the agent with a streaming callback to send intermediate events via SSE
+   */
+  async runStream(
+    input: string,
+    sendEvent: (type: string, data: any) => void,
+  ): Promise<any> {
+    if (!this.agent) {
+      await this.initAgent();
+    }
+    this.logger.log(`Agent received streaming input: ${input}`);
+    const callback = new StreamCallback(sendEvent);
+    const result = (await this.agent.call(
+      { input },
+      { callbacks: [callback] },
+    )) as any;
+    const { output: raw } = result;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
   }
 }

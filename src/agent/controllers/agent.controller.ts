@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, Logger } from '@nestjs/common';
+import { Controller, Post, Body, Get, Logger, Sse, Res } from '@nestjs/common';
 import { LangGraphService } from '../services/lang-graph.service';
 import { AgentService } from '../services/agent.service';
+import { Response } from 'express';
 
 @Controller('agent')
 export class AgentController {
@@ -30,6 +31,25 @@ export class AgentController {
   @Get('test')
   async test(): Promise<{ response: string }> {
     return { response: 'pong' };
+  }
+
+  @Post('chat')
+  @Sse('stream')
+  async chat(
+    @Body('input') input: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/event-stream');
+    const sendEvent = (type: string, data: any) =>
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    try {
+      const result = await this.agentService.runStream(input, sendEvent);
+      sendEvent('final', result);
+    } catch (error) {
+      sendEvent('error', { message: error.message });
+    } finally {
+      res.end();
+    }
   }
 
   // TODO: 후속 질문 처리용 엔드포인트 추가
