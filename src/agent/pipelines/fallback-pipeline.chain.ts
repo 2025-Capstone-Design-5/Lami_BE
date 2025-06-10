@@ -1,11 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { BaseChain } from 'langchain/chains';
+import { ConfigService } from '@nestjs/config';
+import { LLMChain } from 'langchain/chains';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { OpenAI } from '@langchain/openai';
 // TODO: import AgentExecutor or initializeAgentExecutorWithOptions from 'langchain/agents'
 
 @Injectable()
 export class FallbackPipelineChain extends BaseChain {
-  constructor() {
+  private chain: LLMChain;
+  constructor(private configService: ConfigService) {
     super({});
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    const llm = new OpenAI({ openAIApiKey: apiKey });
+    const prompt = new PromptTemplate({
+      template: `{input}`,
+      inputVariables: ['input'],
+    });
+    this.chain = new LLMChain({ llm, prompt });
   }
 
   get inputKeys(): string[] {
@@ -18,8 +30,9 @@ export class FallbackPipelineChain extends BaseChain {
 
   async _call(values: any): Promise<any> {
     const { input } = values;
-    // TODO: implement using AgentExecutor.fromAgentAndTools
-    throw new Error('FallbackPipelineChain._call not implemented');
+    // Use LLMChain to generate a fallback response
+    const response = await this.chain.run({ input });
+    return { output: response };
   }
 
   _chainType(): string {

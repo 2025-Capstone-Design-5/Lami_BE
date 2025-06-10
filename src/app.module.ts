@@ -22,7 +22,9 @@ import { AlarmModule } from './alarm/alarm.module';
       max: 100,
     }),
     // 환경변수 설정
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
     // TypeORM 설정 (PostgreSQL)
     TypeOrmModule.forRoot({
       type: 'postgres',
