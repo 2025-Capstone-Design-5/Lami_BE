@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import * as polyline from '@mapbox/polyline';
 import { firstValueFrom } from 'rxjs';
@@ -26,6 +32,7 @@ type RawRoutes = Record<
 
 @Injectable()
 export class RoutesService {
+  private readonly logger = new Logger(RoutesService.name);
   constructor(
     private readonly httpService: HttpService,
     private readonly tmapService: TmapService,
@@ -105,12 +112,24 @@ export class RoutesService {
     if (options?.arriveBy !== undefined) {
       params.arriveBy = options.arriveBy;
     }
-    console.log(`[RoutesService] Calling OTP URL: ${url}`, params);
-    const response = await firstValueFrom(
-      this.httpService.get<OtpPlanResponse>(url, { params }),
-    );
-    console.log('[RoutesService] OTP raw response:', response.data.plan);
-    return response.data.plan;
+    try {
+      this.logger.log(
+        `[RoutesService] Calling OTP URL: ${url} params: ${JSON.stringify(params)}`,
+      );
+      const response = await firstValueFrom(
+        this.httpService.get<OtpPlanResponse>(url, { params }),
+      );
+      this.logger.log(
+        `[RoutesService] OTP raw response: ${JSON.stringify(response.data.plan)}`,
+      );
+      return response.data.plan;
+    } catch (error) {
+      this.logger.error(`[RoutesService] OTP API 호출 실패: ${url}`, error);
+      throw new HttpException(
+        'OTP API 호출 실패',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
   }
   /**
    * 모든 경로를 조회하여 필요한 정보만 반환
