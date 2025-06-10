@@ -8,15 +8,21 @@ async function bootstrap() {
   // filter out noisy getAllRoutes console logs
   const originalConsoleLog = console.log;
   console.log = (...args: any[]) => {
-    const message = args[0];
-    if (typeof message === 'string' && message.startsWith('[getAllRoutes]')) {
-      return; // suppress getAllRoutes logs
+    const message = args.join(' ');
+    // Only allow Nest framework logs and main startup logs
+    if (
+      message.startsWith('[Nest') ||
+      message.startsWith('[Main]') ||
+      message.startsWith('Bootstrap error') ||
+      message.startsWith('[ExceptionsHandler]')
+    ) {
+      originalConsoleLog(...args);
     }
-    originalConsoleLog(...args);
+    // Other console.log calls are suppressed
   };
-  // Disable built-in NestJS logging; we will use console.log for SSE messages
+  // Enable NestJS logger for errors and warnings
   const app = await NestFactory.create(AppModule, {
-    logger: false,
+    logger: ['error', 'warn', 'log'],
   });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   // Set HTTP server timeout settings to prevent premature connection resets
