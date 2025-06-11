@@ -8,6 +8,8 @@ import { tool } from '@langchain/core/tools';
 import { ChatOpenAI } from '@langchain/openai';
 import { BufferMemory, ConversationSummaryMemory } from 'langchain/memory';
 import { RoutePipelineChain } from '../pipelines/route-pipeline.chain';
+import { RealtimeArrivalPipelineChain } from '../pipelines/realtime-arrival-pipeline.chain';
+import { RealtimeTrafficPipelineChain } from '../pipelines/realtime-traffic-pipeline.chain';
 import { AlarmPipelineChain } from '../pipelines/alarm-pipeline.chain';
 import { CalendarPipelineChain } from '../pipelines/calendar-pipeline.chain';
 import { FallbackPipelineChain } from '../pipelines/fallback-pipeline.chain';
@@ -16,6 +18,8 @@ import { SummaryPipelineChain } from '../pipelines/summary-pipeline.chain';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { createHash } from 'crypto';
+import { LLMChain } from 'langchain/chains';
+import { PromptTemplate } from '@langchain/core/prompts';
 
 @Injectable()
 export class AgentService implements OnModuleInit {
@@ -24,12 +28,15 @@ export class AgentService implements OnModuleInit {
   private llm: ChatOpenAI;
   private agent: AgentExecutor;
   private readonly logger = new Logger(AgentService.name);
+  private classificationChain: LLMChain;
 
   constructor(
     private readonly routeChain: RoutePipelineChain,
     private readonly alarmChain: AlarmPipelineChain,
     private readonly calendarChain: CalendarPipelineChain,
     private readonly fallbackChain: FallbackPipelineChain,
+    private readonly realtimeArrivalChain: RealtimeArrivalPipelineChain,
+    private readonly realtimeTrafficChain: RealtimeTrafficPipelineChain,
     private readonly summaryChain: SummaryPipelineChain,
     private readonly configService: ConfigService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
@@ -41,9 +48,23 @@ export class AgentService implements OnModuleInit {
 
   private async initAgent() {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    this.llm = new ChatOpenAI({ openAIApiKey: apiKey, temperature: 0 });
+    this.llm = new ChatOpenAI({
+      openAIApiKey: apiKey,
+      temperature: 0,
+    });
+
+    // Intent classification prompt: route, alarm, calendar, fallback
+    const classifyPrompt = new PromptTemplate({
+      template: `다음 사용자 입력에 대해 호출할 툴을 결정하세요. 가능한 값은 오직 하나의 소문자 키워드로 응답합니다: route-summary, route-realtimeArrivalInfo, route-realtime-traffic, alarm, calendar, fallback.\n\n사용자 입력: {input}`,
+      inputVariables: ['input'],
+    });
+    this.classificationChain = new LLMChain({
+      llm: this.llm,
+      prompt: classifyPrompt,
+    });
 
     const tools = [
+      // 1) 경로 요약
       tool(
         async ({ fromAddress, toAddress, date, time }) => {
           const out = await this.routeChain.call({
@@ -55,8 +76,8 @@ export class AgentService implements OnModuleInit {
           return JSON.stringify(out.routes);
         },
         {
-          name: 'route',
-          description: '출발지·도착지·날짜·시간으로 경로 조회',
+          name: 'route-summary',
+          description: '출발지·도착지·날짜·시간 기준 경로 요약 조회',
           schema: {
             type: 'object',
             properties: {
@@ -66,6 +87,52 @@ export class AgentService implements OnModuleInit {
               time: { type: 'string' },
             },
             required: ['fromAddress', 'toAddress', 'date', 'time'],
+          },
+          returnDirect: true,
+        },
+      ),
+      // 2) 실시간 도착 정보
+      tool(
+        async ({ fromAddress, toAddress }) => {
+          const info = await this.realtimeArrivalChain.call({
+            fromAddress,
+            toAddress,
+          });
+          return JSON.stringify(info.arrivalInfo);
+        },
+        {
+          name: 'route-realtimeArrivalInfo',
+          description: '출발지·도착지에 대한 실시간 도착 정보 조회',
+          schema: {
+            type: 'object',
+            properties: {
+              fromAddress: { type: 'string' },
+              toAddress: { type: 'string' },
+            },
+            required: ['fromAddress', 'toAddress'],
+          },
+          returnDirect: true,
+        },
+      ),
+      // 3) 실시간 교통 상황
+      tool(
+        async ({ fromAddress, toAddress }) => {
+          const traffic = await this.realtimeTrafficChain.call({
+            fromAddress,
+            toAddress,
+          });
+          return JSON.stringify(traffic);
+        },
+        {
+          name: 'route-realtime-traffic',
+          description: '출발지·도착지 간 실시간 교통 상황 조회',
+          schema: {
+            type: 'object',
+            properties: {
+              fromAddress: { type: 'string' },
+              toAddress: { type: 'string' },
+            },
+            required: ['fromAddress', 'toAddress'],
           },
           returnDirect: true,
         },
@@ -116,7 +183,8 @@ export class AgentService implements OnModuleInit {
         },
         {
           name: 'fallback',
-          description: '기타 예외적 상황에 대한 대체 처리',
+          description:
+            '일반 대화, 인삿말, 기능 문의 등을 처리하는 함수입니다. 경로, 알람, 일정 기능 외 모든 입력에 대해 이 함수를 호출해야 합니다.',
           schema: {
             type: 'object',
             properties: { input: { type: 'string' } },
@@ -132,10 +200,11 @@ export class AgentService implements OnModuleInit {
       maxIterations: 5,
       returnIntermediateSteps: true,
       verbose: true,
-      handleParsingErrors: true,
+      handleParsingErrors: (e) =>
+        `필수 파라미터가 누락되었습니다: ${e.message}`,
       handleToolRuntimeErrors: (e) => `Tool error: ${e.message}`,
       agentArgs: {
-        prefix: `You are a helpful AI assistant. When a user asks for routing, ensure the input includes departure, destination, date (YYYY-MM-DD), and time (HH:MM). If any are missing, ask explicitly in format: '출발지에서 도착지로 YYYY-MM-DD HH:MM 도착 기준으로 알려줘'.`,
+        prefix: `You are Lami, a versatile AI assistant with the following functions: route (for routing), alarm (for setting alarms), calendar (for scheduling), and fallback (for general conversation). For any user input not related to routing, alarms, or calendar, you must call the fallback function with the full user input. The fallback function will handle greetings, capability inquiries (e.g., '너는 어떤 기능이니'), and general chit-chat. When a user asks for routing, ensure the input includes departure, destination, date (YYYY-MM-DD), and time (HH:MM). If any information is missing, ask explicitly: '출발지에서 도착지로 YYYY-MM-DD HH:MM 도착 기준으로 알려줘'.`,
       },
     });
     this.logger.log(
@@ -151,9 +220,23 @@ export class AgentService implements OnModuleInit {
   }
 
   async run(input: string) {
-    if (!this.agent) {
-      await this.initAgent();
+    if (!this.agent) await this.initAgent();
+    // Intent classification
+    const { text: classificationRaw } = await this.classificationChain.call({
+      input,
+    });
+    const classification = classificationRaw.trim().toLowerCase();
+    if (classification === 'fallback') {
+      // Handle general chit-chat via fallbackChain
+      const out = await this.fallbackChain.call({ input });
+      return out.output;
     }
+    // Reset conversation memory for each request
+    this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
+    this.summaryMemory = new ConversationSummaryMemory({
+      memoryKey: 'chat_history',
+      llm: this.llm,
+    });
     this.logger.log(`Agent received input: ${input}`);
     // Invoke agent and capture intermediate steps
     const chainOutput = (await this.agent.call({ input })) as any;
@@ -196,9 +279,22 @@ export class AgentService implements OnModuleInit {
     input: string,
     sendEvent: (type: string, data: any) => void,
   ): Promise<any> {
-    if (!this.agent) {
-      await this.initAgent();
+    if (!this.agent) await this.initAgent();
+    // Intent classification for streaming
+    const { text: classificationRawStream } =
+      await this.classificationChain.call({ input });
+    const classificationStream = classificationRawStream.trim().toLowerCase();
+    if (classificationStream === 'fallback') {
+      // Direct fallback for chit-chat
+      const out = await this.fallbackChain.call({ input });
+      return out.output;
     }
+    // Reset conversation memory for each streaming request
+    this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
+    this.summaryMemory = new ConversationSummaryMemory({
+      memoryKey: 'chat_history',
+      llm: this.llm,
+    });
     this.logger.log(`Agent received streaming input: ${input}`);
     const callback = new StreamCallback(sendEvent);
     // Invoke agent and stream callbacks

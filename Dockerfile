@@ -1,21 +1,24 @@
 # Stage 1: Build 단계
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
+ENV NPM_CONFIG_LOGLEVEL=error
 
-# package.json 설치
+# package.json 설치 (reproducible, prod-only)
 COPY package*.json ./
-RUN npm install
+RUN npm ci --omit=dev --loglevel=error
 
 # 소스 복사 및 빌드
 COPY . .
-RUN npm run build
+RUN npm run build --silent
 
 # Stage 2: Production 단계
-FROM node:18-alpine
-# timezone 설정
-RUN apk add --no-cache tzdata
+FROM node:20-alpine
+# slim timezone: add then remove tzdata
+RUN apk add --no-cache tzdata \
+    && cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime \
+    && echo "Asia/Seoul" > /etc/timezone \
+    && apk del tzdata
 ENV TZ=Asia/Seoul
-RUN cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime && echo "Asia/Seoul" > /etc/timezone
 WORKDIR /app
 
 # 빌드 아티팩트와 의존성 복사

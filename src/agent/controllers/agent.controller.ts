@@ -50,13 +50,17 @@ export class AgentController {
   @Post('chat/stream')
   @Header('Cache-Control', 'no-cache')
   @Header('Content-Type', 'text/event-stream')
+  @Header('Connection', 'keep-alive')
   async chat(
     @Body('input') input: string,
     @Res() res: Response,
   ): Promise<void> {
-    res.setHeader('Content-Type', 'text/event-stream');
+    // flush headers and send initial ping
+    res.flushHeaders();
+    res.write(':ping\n\n');
+    // SSE: send JSON with embedded type and payload in default message event
     const sendEvent = (type: string, data: any) =>
-      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+      res.write(`data: ${JSON.stringify({ type, payload: data })}\n\n`);
     try {
       this.logger.log(`Agent chat stream start for input: ${input}`);
       const result = await this.agentService.runStream(input, sendEvent);
