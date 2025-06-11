@@ -9,6 +9,7 @@ import { RoutePipelineChain } from './pipelines/route-pipeline.chain';
 import { AlarmPipelineChain } from './pipelines/alarm-pipeline.chain';
 import { CalendarPipelineChain } from './pipelines/calendar-pipeline.chain';
 import { FallbackPipelineChain } from './pipelines/fallback-pipeline.chain';
+import { SummaryPipelineChain } from './pipelines/summary-pipeline.chain';
 import { AgentService } from './services/agent.service';
 
 @Module({
@@ -20,6 +21,7 @@ import { AgentService } from './services/agent.service';
     AlarmPipelineChain,
     CalendarPipelineChain,
     FallbackPipelineChain,
+    SummaryPipelineChain,
     AgentService,
   ],
 })

@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   initializeAgentExecutorWithOptions,
@@ -6,14 +6,21 @@ import {
 } from 'langchain/agents';
 import { tool } from '@langchain/core/tools';
 import { ChatOpenAI } from '@langchain/openai';
+import { BufferMemory, ConversationSummaryMemory } from 'langchain/memory';
 import { RoutePipelineChain } from '../pipelines/route-pipeline.chain';
 import { AlarmPipelineChain } from '../pipelines/alarm-pipeline.chain';
 import { CalendarPipelineChain } from '../pipelines/calendar-pipeline.chain';
 import { FallbackPipelineChain } from '../pipelines/fallback-pipeline.chain';
 import { StreamCallback } from './stream-callback.handler';
+import { SummaryPipelineChain } from '../pipelines/summary-pipeline.chain';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { createHash } from 'crypto';
 
 @Injectable()
 export class AgentService implements OnModuleInit {
+  private bufferMemory: BufferMemory;
+  private summaryMemory: ConversationSummaryMemory;
   private agent: AgentExecutor;
   private readonly logger = new Logger(AgentService.name);
 
@@ -22,7 +29,9 @@ export class AgentService implements OnModuleInit {
     private readonly alarmChain: AlarmPipelineChain,
     private readonly calendarChain: CalendarPipelineChain,
     private readonly fallbackChain: FallbackPipelineChain,
+    private readonly summaryChain: SummaryPipelineChain,
     private readonly configService: ConfigService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   async onModuleInit() {
@@ -131,6 +140,13 @@ export class AgentService implements OnModuleInit {
     this.logger.log(
       'Agent initialized with tools: ' + tools.map((t) => t.name).join(', '),
     );
+
+    // Initialize conversation memory
+    this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
+    this.summaryMemory = new ConversationSummaryMemory({
+      memoryKey: 'chat_history',
+      llm,
+    });
   }
 
   async run(input: string) {
@@ -148,6 +164,20 @@ export class AgentService implements OnModuleInit {
     } catch {
       result = raw;
     }
+    // 1) 캐시 저장 및 요약 체인: 경로 응답일 경우 요약만 반환하고 상세는 캐시에 저장
+    if (Array.isArray(result)) {
+      const rawRoutes = result;
+      const hash = createHash('md5')
+        .update(JSON.stringify(rawRoutes))
+        .digest('hex');
+      const cacheKey = `agent:routes:${hash}`;
+      await this.cacheManager.set(cacheKey, rawRoutes, 60);
+      const summary = await this.summaryChain.call(rawRoutes);
+      result = { summary, cacheKey };
+    }
+    // 2) 메모리 관리: 대화 기록 및 요약 저장
+    await this.bufferMemory.saveContext({ input }, { output: result });
+    await this.summaryMemory.saveContext({ input }, { output: result });
     this.logger.log(`Agent output: ${JSON.stringify(result)}`);
     return result;
   }
@@ -164,15 +194,32 @@ export class AgentService implements OnModuleInit {
     }
     this.logger.log(`Agent received streaming input: ${input}`);
     const callback = new StreamCallback(sendEvent);
-    const result = (await this.agent.call(
+    // Invoke agent and stream callbacks
+    const chainOutput = (await this.agent.call(
       { input },
       { callbacks: [callback] },
     )) as any;
-    const { output: raw } = result;
+    const { output: raw } = chainOutput;
+    let result: any;
     try {
-      return JSON.parse(raw);
+      result = JSON.parse(raw);
     } catch {
-      return raw;
+      result = raw;
     }
+    // 캐시 저장 및 요약 체인 적용
+    if (Array.isArray(result)) {
+      const rawRoutes = result;
+      const hash = createHash('md5')
+        .update(JSON.stringify(rawRoutes))
+        .digest('hex');
+      const cacheKey = `agent:routes:${hash}`;
+      await this.cacheManager.set(cacheKey, rawRoutes, 60);
+      const summary = await this.summaryChain.call(rawRoutes);
+      result = { summary, cacheKey };
+    }
+    // 메모리 저장
+    await this.bufferMemory.saveContext({ input }, { output: result });
+    await this.summaryMemory.saveContext({ input }, { output: result });
+    return result;
   }
 }

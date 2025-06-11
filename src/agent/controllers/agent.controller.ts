@@ -1,7 +1,20 @@
-import { Controller, Post, Body, Get, Logger, Sse, Res } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Logger,
+  Res,
+  Inject,
+  BadRequestException,
+  HttpStatus,
+  Header,
+} from '@nestjs/common';
 import { LangGraphService } from '../services/lang-graph.service';
 import { AgentService } from '../services/agent.service';
 import { Response } from 'express';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 @Controller('agent')
 export class AgentController {
@@ -9,6 +22,7 @@ export class AgentController {
   constructor(
     private readonly langGraphService: LangGraphService,
     private readonly agentService: AgentService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
   @Post('process')
@@ -33,8 +47,9 @@ export class AgentController {
     return { response: 'pong' };
   }
 
-  @Post('chat')
-  @Sse('stream')
+  @Post('chat/stream')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Content-Type', 'text/event-stream')
   async chat(
     @Body('input') input: string,
     @Res() res: Response,
@@ -43,6 +58,7 @@ export class AgentController {
     const sendEvent = (type: string, data: any) =>
       res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
+      this.logger.log(`Agent chat stream start for input: ${input}`);
       const result = await this.agentService.runStream(input, sendEvent);
       sendEvent('final', result);
     } catch (error) {
@@ -50,6 +66,42 @@ export class AgentController {
     } finally {
       res.end();
     }
+  }
+
+  /**
+   * 상세 경로 조회 (캐시된 rawRoutes에서 summaryKey, category, index로 조회)
+   */
+  @Post('detail')
+  async getRouteDetail(
+    @Body('summaryKey') summaryKey: string,
+    @Body('category') category: string,
+    @Body('index') index: number,
+  ) {
+    this.logger.log(
+      `Agent detail request: summaryKey=${summaryKey}, category=${category}, index=${index}`,
+    );
+    const allRoutes =
+      await this.cacheManager.get<Record<string, any[]>>(summaryKey);
+    if (!allRoutes) {
+      throw new BadRequestException(
+        '캐시된 경로 정보가 없습니다. 먼저 경로 요약을 요청하세요.',
+      );
+    }
+    const list = allRoutes[category];
+    if (!list) {
+      throw new BadRequestException(`Unknown category: ${category}`);
+    }
+    if (index < 0 || index >= list.length) {
+      throw new BadRequestException(
+        `Invalid index ${index} for category ${category}`,
+      );
+    }
+    const selected = list[index];
+    return {
+      status: HttpStatus.OK,
+      message: '상세 경로 조회 성공',
+      data: selected,
+    };
   }
 
   // TODO: 후속 질문 처리용 엔드포인트 추가
