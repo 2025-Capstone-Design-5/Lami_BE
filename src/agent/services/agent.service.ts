@@ -21,6 +21,7 @@ import { createHash } from 'crypto';
 export class AgentService implements OnModuleInit {
   private bufferMemory: BufferMemory;
   private summaryMemory: ConversationSummaryMemory;
+  private llm: ChatOpenAI;
   private agent: AgentExecutor;
   private readonly logger = new Logger(AgentService.name);
 
@@ -40,7 +41,7 @@ export class AgentService implements OnModuleInit {
 
   private async initAgent() {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const llm = new ChatOpenAI({ openAIApiKey: apiKey, temperature: 0 });
+    this.llm = new ChatOpenAI({ openAIApiKey: apiKey, temperature: 0 });
 
     const tools = [
       tool(
@@ -126,7 +127,7 @@ export class AgentService implements OnModuleInit {
       ),
     ];
 
-    this.agent = await initializeAgentExecutorWithOptions(tools, llm, {
+    this.agent = await initializeAgentExecutorWithOptions(tools, this.llm, {
       agentType: 'openai-functions',
       maxIterations: 5,
       returnIntermediateSteps: true,
@@ -145,7 +146,7 @@ export class AgentService implements OnModuleInit {
     this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
     this.summaryMemory = new ConversationSummaryMemory({
       memoryKey: 'chat_history',
-      llm,
+      llm: this.llm,
     });
   }
 
@@ -164,8 +165,14 @@ export class AgentService implements OnModuleInit {
     } catch {
       result = raw;
     }
-    // 1) 캐시 저장 및 요약 체인: 경로 응답일 경우 요약만 반환하고 상세는 캐시에 저장
+    // 1) 캐시 저장 및 요약 체인: 경로 응답일 경우 메모리 초기화 후 요약만 반환, 상세는 캐시에 저장
     if (Array.isArray(result)) {
+      // Clear previous conversation memory for route context
+      this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
+      this.summaryMemory = new ConversationSummaryMemory({
+        memoryKey: 'chat_history',
+        llm: this.llm,
+      });
       const rawRoutes = result;
       const hash = createHash('md5')
         .update(JSON.stringify(rawRoutes))
@@ -206,8 +213,13 @@ export class AgentService implements OnModuleInit {
     } catch {
       result = raw;
     }
-    // 캐시 저장 및 요약 체인 적용
+    // 캐시 저장 및 요약 체인 적용: 메모리 초기화 후 요약만 반환, 상세는 캐시에 저장
     if (Array.isArray(result)) {
+      this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
+      this.summaryMemory = new ConversationSummaryMemory({
+        memoryKey: 'chat_history',
+        llm: this.llm,
+      });
       const rawRoutes = result;
       const hash = createHash('md5')
         .update(JSON.stringify(rawRoutes))
