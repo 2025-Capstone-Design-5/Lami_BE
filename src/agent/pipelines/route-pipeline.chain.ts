@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { BaseChain } from 'langchain/chains';
 import { RoutesService } from '../../traffic/routes/routes.service';
+import { SummaryPipelineChain } from './summary-pipeline.chain';
 
 @Injectable()
 export class RoutePipelineChain extends BaseChain {
-  constructor(private readonly routesService: RoutesService) {
+  constructor(
+    private readonly routesService: RoutesService,
+    private readonly summaryChain: SummaryPipelineChain,
+  ) {
     super({});
   }
 
@@ -14,18 +18,21 @@ export class RoutePipelineChain extends BaseChain {
   }
 
   get outputKeys(): string[] {
-    return ['routes'];
+    return ['summary'];
   }
 
   async _call(values: any): Promise<any> {
     const { fromAddress, toAddress, date, time } = values;
+    // Fetch raw routes
     const routes = await this.routesService.getAllRoutes(
       fromAddress,
       toAddress,
       { date, time },
     );
-    // Return the raw routes (summary handled by client or downstream chain)
-    return { routes };
+    // Generate a summary string
+    const summary = await this.summaryChain.call(routes);
+    // Return only the summary
+    return { summary };
   }
 
   // Implement abstract chain type identifier

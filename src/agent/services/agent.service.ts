@@ -51,6 +51,7 @@ export class AgentService implements OnModuleInit {
     this.llm = new ChatOpenAI({
       openAIApiKey: apiKey,
       temperature: 0,
+      streaming: true,
     });
 
     // Intent classification prompt: route, alarm, calendar, fallback
@@ -67,13 +68,27 @@ export class AgentService implements OnModuleInit {
       // 1) 경로 요약
       tool(
         async ({ fromAddress, toAddress, date, time }) => {
+          // Validate required fields and prompt user if missing
+          if (!fromAddress) {
+            return '출발지를 알려주세요. (예: 서울역)';
+          }
+          if (!toAddress) {
+            return '도착지를 알려주세요. (예: 김포공항)';
+          }
+          if (!date) {
+            return '날짜를 알려주세요. (YYYY-MM-DD)';
+          }
+          if (!time) {
+            return '시간을 알려주세요. (HH:MM)';
+          }
+          // All inputs present, call the route pipeline to get summary
           const out = await this.routeChain.call({
             fromAddress,
             toAddress,
             date,
             time,
           });
-          return JSON.stringify(out.routes);
+          return out.summary as string;
         },
         {
           name: 'route-summary',
@@ -196,15 +211,17 @@ export class AgentService implements OnModuleInit {
     ];
 
     this.agent = await initializeAgentExecutorWithOptions(tools, this.llm, {
-      agentType: 'openai-functions',
-      maxIterations: 5,
+      // Use a textual ReAct agent to surface chain-of-thought reasoning
+      agentType: 'structured-chat-zero-shot-react-description',
+      maxIterations: 8,
       returnIntermediateSteps: true,
       verbose: true,
       handleParsingErrors: (e) =>
         `필수 파라미터가 누락되었습니다: ${e.message}`,
       handleToolRuntimeErrors: (e) => `Tool error: ${e.message}`,
       agentArgs: {
-        prefix: `You are Lami, a versatile AI assistant with the following functions: route (for routing), alarm (for setting alarms), calendar (for scheduling), and fallback (for general conversation). For any user input not related to routing, alarms, or calendar, you must call the fallback function with the full user input. The fallback function will handle greetings, capability inquiries (e.g., '너는 어떤 기능이니'), and general chit-chat. When a user asks for routing, ensure the input includes departure, destination, date (YYYY-MM-DD), and time (HH:MM). If any information is missing, ask explicitly: '출발지에서 도착지로 YYYY-MM-DD HH:MM 도착 기준으로 알려줘'.`,
+        // Instruct the model to think step by step before calling tools
+        prefix: `You are Lami, a versatile AI assistant. Think through your reasoning step by step before deciding to call a tool. You have the following functions: route, alarm, calendar, and fallback. For routing queries, include departure, destination, date, and time. If any of these required details (fromAddress, toAddress, date, or time) are missing from the user's input, ask a clarifying question to collect them before attempting to call the tool.`,
       },
     });
     this.logger.log(
@@ -302,6 +319,19 @@ export class AgentService implements OnModuleInit {
       { input },
       { callbacks: [callback] },
     )) as any;
+    // Emit intermediate steps (chain-of-thought) to client
+    const { intermediateSteps = [] } = chainOutput;
+    if (Array.isArray(intermediateSteps)) {
+      for (const [action, observation] of intermediateSteps) {
+        // action.log contains the model's reasoning step
+        sendEvent('step', {
+          tool: action.tool,
+          input: action.toolInput,
+          reason: action.log,
+          observation,
+        });
+      }
+    }
     const { output: raw } = chainOutput;
     let result: any;
     try {
@@ -325,9 +355,13 @@ export class AgentService implements OnModuleInit {
       const summary = await this.summaryChain.call(rawRoutes);
       result = { summary, cacheKey };
     }
-    // 메모리 저장
-    await this.bufferMemory.saveContext({ input }, { output: result });
-    await this.summaryMemory.saveContext({ input }, { output: result });
+    // 메모리 저장 (streaming에서 에러시 흐름 중단 방지)
+    try {
+      await this.bufferMemory.saveContext({ input }, { output: result });
+      await this.summaryMemory.saveContext({ input }, { output: result });
+    } catch (e) {
+      this.logger.error(`Memory save error: ${e.message}`, e.stack);
+    }
     return result;
   }
 }
