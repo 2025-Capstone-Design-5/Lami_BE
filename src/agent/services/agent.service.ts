@@ -85,18 +85,10 @@ export class AgentService implements OnModuleInit {
       tool(
         async ({ fromAddress, toAddress, date, time }) => {
           // Validate required fields and prompt user if missing
-          if (!fromAddress) {
-            return '출발지를 알려주세요. (예: 서울역)';
-          }
-          if (!toAddress) {
-            return '도착지를 알려주세요. (예: 김포공항)';
-          }
-          if (!date) {
-            return '날짜를 알려주세요. (YYYY-MM-DD)';
-          }
-          if (!time) {
-            return '시간을 알려주세요. (HH:MM)';
-          }
+          if (!fromAddress) return '출발지를 알려주세요. (예: 서울역)';
+          if (!toAddress) return '도착지를 알려주세요. (예: 김포공항)';
+          if (!date) return '날짜를 알려주세요. (YYYY-MM-DD)';
+          if (!time) return '시간을 알려주세요. (HH:MM)';
           // All inputs present, call the route pipeline to get summary
           const out = await this.routeChain.call({
             fromAddress,
@@ -124,7 +116,8 @@ export class AgentService implements OnModuleInit {
       ),
       // 2) 실시간 도착 정보
       tool(
-        async ({ fromAddress, toAddress }) => {
+        async (args: { fromAddress: string; toAddress: string }) => {
+          const { fromAddress, toAddress } = args;
           const info = await this.realtimeArrivalChain.call({
             fromAddress,
             toAddress,
@@ -147,7 +140,8 @@ export class AgentService implements OnModuleInit {
       ),
       // 3) 실시간 교통 상황
       tool(
-        async ({ fromAddress, toAddress }) => {
+        async (args: { fromAddress: string; toAddress: string }) => {
+          const { fromAddress, toAddress } = args;
           const traffic = await this.realtimeTrafficChain.call({
             fromAddress,
             toAddress,
@@ -169,7 +163,8 @@ export class AgentService implements OnModuleInit {
         },
       ),
       tool(
-        async ({ time, message }) => {
+        async (args: { time: string; message: string }) => {
+          const { time, message } = args;
           const output = await this.alarmChain.call({ time, message });
           return output.confirmation;
         },
@@ -189,7 +184,8 @@ export class AgentService implements OnModuleInit {
         },
       ),
       tool(
-        async ({ date, eventDetails }) => {
+        async (args: { date: string; eventDetails: string }) => {
+          const { date, eventDetails } = args;
           const output = await this.calendarChain.call({ date, eventDetails });
           return output.confirmation;
         },
@@ -208,7 +204,8 @@ export class AgentService implements OnModuleInit {
         },
       ),
       tool(
-        async ({ input }) => {
+        async (args: { input: string }) => {
+          const { input } = args;
           const out = await this.fallbackChain.call({ input });
           return out.output;
         },
@@ -231,12 +228,32 @@ export class AgentService implements OnModuleInit {
       maxIterations: 8,
       returnIntermediateSteps: true,
       verbose: true,
-      handleParsingErrors: (e) =>
-        `필수 파라미터가 누락되었습니다: ${e.message}`,
+      handleParsingErrors: (e) => {
+        const msg = e.message || '';
+        if (msg.includes('fromAddress')) {
+          return '🚗 출발지가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+        }
+        if (msg.includes('toAddress')) {
+          return '🏁 도착지가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+        }
+        if (msg.includes('date')) {
+          return '📅 날짜가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+        }
+        if (msg.includes('time')) {
+          return '⏰ 시간이 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+        }
+        return '입력 형식을 확인해주세요. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, YYYY-MM-DD, HH:MM"';
+      },
       handleToolRuntimeErrors: (e) => `Tool error: ${e.message}`,
       agentArgs: {
-        // Instruct the model to think step by step before calling tools
-        prefix: `You are Lami, a versatile AI assistant. Think through your reasoning step by step before deciding to call a tool. You have the following functions: route, alarm, calendar, and fallback. For routing queries, include departure, destination, date, and time. If any of these required details (fromAddress, toAddress, date, or time) are missing from the user's input, ask a clarifying question to collect them before attempting to call the tool.`,
+        prefix: `당신은 Lami라는 다용도 AI 비서입니다. 도구를 호출하기 전에 단계별로 사고 과정을 모두 한국어로 작성하세요.
+사용자 입력이 "<fromAddress>에서 <toAddress>까지" 패턴을 포함하고 YYYY-MM-DD 형식의 날짜 및 HH:MM 형식의 시간을 포함하면 경로 요약 요청으로 간주하고, 추가 질문 없이 즉시 'route-summary' 도구를 다음 JSON {{"fromAddress": "<fromAddress>", "toAddress": "<toAddress>", "date": "<date>", "time": "<time>"}} 형태로 호출하세요.
+파라미터가 누락된 경우, 누락된 항목(출발지, 도착지, 날짜, 시간)에 대해 구체적으로 한국어로 질문하세요.
+실시간 도착 정보 요청에는 'route-realtimeArrivalInfo'를 호출하세요.
+실시간 교통 상황 요청에는 'route-realtime-traffic'를 호출하세요.
+알람 설정 요청에는 'alarm'을 호출하세요.
+일정 등록 요청에는 'calendar'를 호출하세요.
+일반 대화 요청에는 'fallback'을 호출하세요.`,
       },
     });
     this.logger.log(
@@ -253,16 +270,6 @@ export class AgentService implements OnModuleInit {
 
   async run(input: string) {
     if (!this.agent) await this.initAgent();
-    // Intent classification
-    const { text: classificationRaw } = await this.classificationChain.call({
-      input,
-    });
-    const classification = classificationRaw.trim().toLowerCase();
-    if (classification === 'fallback') {
-      // Handle general chit-chat via fallbackChain
-      const out = await this.fallbackChain.call({ input });
-      return out.output;
-    }
     // Reset conversation memory for each request
     this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
     this.summaryMemory = new ConversationSummaryMemory({
@@ -312,15 +319,6 @@ export class AgentService implements OnModuleInit {
     sendEvent: (type: string, data: any) => void,
   ): Promise<any> {
     if (!this.agent) await this.initAgent();
-    // Intent classification for streaming
-    const { text: classificationRawStream } =
-      await this.classificationChain.call({ input });
-    const classificationStream = classificationRawStream.trim().toLowerCase();
-    if (classificationStream === 'fallback') {
-      // Direct fallback for chit-chat
-      const out = await this.fallbackChain.call({ input });
-      return out.output;
-    }
     // Reset conversation memory for each streaming request
     this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
     this.summaryMemory = new ConversationSummaryMemory({
