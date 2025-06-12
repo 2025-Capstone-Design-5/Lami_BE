@@ -48,19 +48,35 @@ export class AgentService implements OnModuleInit {
 
   private async initAgent() {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    // Main streaming LLM for agent reasoning
     this.llm = new ChatOpenAI({
       openAIApiKey: apiKey,
       temperature: 0,
       streaming: true,
     });
+    // Dedicated non-streaming LLM for robust classification
+    const classificationLLM = new ChatOpenAI({
+      openAIApiKey: apiKey,
+      temperature: 0,
+      streaming: false,
+      modelName:
+        this.configService.get<string>('OPENAI_CLASSIFICATION_MODEL') ||
+        'gpt-3.5-turbo',
+    });
 
-    // Intent classification prompt: route, alarm, calendar, fallback
+    // Enhanced few-shot classification prompt with examples
     const classifyPrompt = new PromptTemplate({
-      template: `다음 사용자 입력에 대해 호출할 툴을 결정하세요. 가능한 값은 오직 하나의 소문자 키워드로 응답합니다: route-summary, route-realtimeArrivalInfo, route-realtime-traffic, alarm, calendar, fallback.\n\n사용자 입력: {input}`,
+      template: `아래 예시를 참고하여, 주어진 사용자 입력에 대해 호출할 툴을 결정하세요. 가능한 값(하나만): route-summary, route-realtimeArrivalInfo, route-realtime-traffic, alarm, calendar, fallback.
+예시:
+사용자 입력: '서울역에서 강남역까지 가는 방법을 알려줘' → route-summary
+사용자 입력: '알람 8시에 깨워줘' → alarm
+사용자 입력: '오늘 일정 추가해 줘' → calendar
+사용자 입력: '일반 대화 테스트' → fallback
+사용자 입력: '{input}'`,
       inputVariables: ['input'],
     });
     this.classificationChain = new LLMChain({
-      llm: this.llm,
+      llm: classificationLLM,
       prompt: classifyPrompt,
     });
 
@@ -209,7 +225,6 @@ export class AgentService implements OnModuleInit {
         },
       ),
     ];
-
     this.agent = await initializeAgentExecutorWithOptions(tools, this.llm, {
       // Use a textual ReAct agent to surface chain-of-thought reasoning
       agentType: 'structured-chat-zero-shot-react-description',
@@ -319,18 +334,26 @@ export class AgentService implements OnModuleInit {
       { input },
       { callbacks: [callback] },
     )) as any;
-    // Emit intermediate steps (chain-of-thought) to client
     const { intermediateSteps = [] } = chainOutput;
-    if (Array.isArray(intermediateSteps)) {
-      for (const [action, observation] of intermediateSteps) {
-        // action.log contains the model's reasoning step
-        sendEvent('step', {
-          tool: action.tool,
-          input: action.toolInput,
-          reason: action.log,
-          observation,
-        });
+    // Emit intermediate steps (chain-of-thought) safely
+    try {
+      if (Array.isArray(intermediateSteps)) {
+        for (const step of intermediateSteps as any[]) {
+          if (!Array.isArray(step) || step.length < 2) continue;
+          const [action, observation] = step;
+          sendEvent('step', {
+            tool: action.tool,
+            input: action.toolInput,
+            reason: typeof action.log === 'string' ? action.log.trim() : '',
+            observation,
+          });
+        }
       }
+    } catch (e: any) {
+      this.logger.error(
+        `Error streaming intermediateSteps: ${e.message}`,
+        e.stack,
+      );
     }
     const { output: raw } = chainOutput;
     let result: any;

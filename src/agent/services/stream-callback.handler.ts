@@ -4,6 +4,8 @@ export class StreamCallback extends BaseCallbackHandler {
   name = 'StreamCallback';
   // buffer to accumulate LLM tokens as reasoning chain
   private reasoningBuffer = '';
+  // map runId to toolName for cases where tags are missing
+  private toolNameMap: Record<string, string> = {};
   constructor(private readonly sendEvent: (type: string, data: any) => void) {
     super();
   }
@@ -39,6 +41,8 @@ export class StreamCallback extends BaseCallbackHandler {
         : typeof tool === 'string'
           ? tool
           : (tool?.name ?? '').toString();
+    // store mapping for later use in handleToolEnd/error
+    this.toolNameMap[runId] = toolName;
     // send friendly status message for tool invocation
     let statusMessage = '';
     switch (toolName) {
@@ -67,7 +71,7 @@ export class StreamCallback extends BaseCallbackHandler {
     const reason = (typeof log === 'string' ? log : '').trim();
     // Clear any buffered tokens
     this.reasoningBuffer = '';
-    this.sendEvent('tool_call', { tool, toolInput, reason });
+    this.sendEvent('action_start', { tool, toolInput, reason });
   }
 
   async handleAgentEnd(
@@ -85,9 +89,14 @@ export class StreamCallback extends BaseCallbackHandler {
     parentRunId?: string,
     tags?: string[],
   ): Promise<void> {
+    // derive toolName from tags or fallback to stored mapping
     const toolName =
-      Array.isArray(tags) && tags.length > 0 ? tags[0] : 'unknown';
-    this.sendEvent('tool_result', { tool: toolName, result: output });
+      Array.isArray(tags) && tags.length > 0
+        ? tags[0]
+        : (this.toolNameMap[runId] ?? 'unknown');
+    this.sendEvent('action_result', { tool: toolName, result: output });
+    // clean up mapping
+    delete this.toolNameMap[runId];
   }
 
   // Emit errors from the LLM/chat model
@@ -106,12 +115,17 @@ export class StreamCallback extends BaseCallbackHandler {
     parentRunId?: string,
     tags?: string[],
   ): Promise<void> {
+    // derive toolName from tags or fallback to stored mapping
     const toolName =
-      Array.isArray(tags) && tags.length > 0 ? tags[0] : 'unknown';
+      Array.isArray(tags) && tags.length > 0
+        ? tags[0]
+        : (this.toolNameMap[runId] ?? 'unknown');
     this.sendEvent('error', {
       type: 'tool_error',
       tool: toolName,
       message: err.message,
     });
+    // clean up mapping
+    delete this.toolNameMap[runId];
   }
 }
