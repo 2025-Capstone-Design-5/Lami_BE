@@ -4,12 +4,15 @@ import { TmapModule } from '../tmap/tmap.module';
 import { TagoModule } from '../tago/tago.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SavedRoute } from './entities/saved-route.entity';
+import { FavoriteRoute } from './entities/favorite-route.entity';
 import { Route } from './entities/route.entity';
-import { RouteRealtimeParam } from './entities/route-realtime-param.entity';
 import { RoutesService } from './routes.service';
 import { RoutesController } from './routes.controller';
 import { DebugRoutesController } from './routes.debug.controller';
+import { FavoriteRoutesController } from './favorite-routes.controller';
 import { ItsModule } from '../its/its.module';
+import { UsersModule } from '@/users/users.module';
+import { AlarmModule } from '@/alarm/alarm.module';
 
 // NODE_ENV에 따라 디버그 컨트롤러 포함 여부 결정
 const routeControllers: any[] = [RoutesController];
@@ -17,14 +20,17 @@ const routeControllers: any[] = [RoutesController];
 
 // }
 routeControllers.push(DebugRoutesController);
+routeControllers.push(FavoriteRoutesController);
 
 @Module({
   imports: [
     HttpModule,
     TmapModule,
     TagoModule,
+    UsersModule,
     forwardRef(() => ItsModule),
-    TypeOrmModule.forFeature([SavedRoute, Route, RouteRealtimeParam]),
+    TypeOrmModule.forFeature([SavedRoute, Route, FavoriteRoute]),
+    AlarmModule,
   ],
   controllers: routeControllers,
   providers: [RoutesService],

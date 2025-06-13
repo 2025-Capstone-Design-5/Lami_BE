@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  Logger,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import * as polyline from '@mapbox/polyline';
 import { firstValueFrom } from 'rxjs';
@@ -26,6 +32,7 @@ type RawRoutes = Record<
 
 @Injectable()
 export class RoutesService {
+  private readonly logger = new Logger(RoutesService.name);
   constructor(
     private readonly httpService: HttpService,
     private readonly tmapService: TmapService,
@@ -71,7 +78,7 @@ export class RoutesService {
       mode: options?.mode ?? 'TRANSIT,WALK,CAR',
       transitModes: options?.transitModes ?? 'BUS,SUBWAY',
       maxPreTransitTime: options?.maxPreTransitTime ?? 600,
-      numItineraries: options?.numItineraries ?? 5,
+      numItineraries: options?.numItineraries ?? 4,
       // 허용할 최대 도보 거리(m)
       maxWalkDistance: options?.maxWalkDistance ?? 2000,
       // 허용할 최대 환승 횟수
@@ -105,12 +112,24 @@ export class RoutesService {
     if (options?.arriveBy !== undefined) {
       params.arriveBy = options.arriveBy;
     }
-    console.log(`[RoutesService] Calling OTP URL: ${url}`, params);
-    const response = await firstValueFrom(
-      this.httpService.get<OtpPlanResponse>(url, { params }),
-    );
-    console.log('[RoutesService] OTP raw response:', response.data.plan);
-    return response.data.plan;
+    try {
+      this.logger.log(
+        `[RoutesService] Calling OTP URL: ${url} params: ${JSON.stringify(params)}`,
+      );
+      const response = await firstValueFrom(
+        this.httpService.get<OtpPlanResponse>(url, { params }),
+      );
+      this.logger.log(
+        `[RoutesService] OTP raw response: ${JSON.stringify(response.data.plan)}`,
+      );
+      return response.data.plan;
+    } catch (error) {
+      this.logger.error(`[RoutesService] OTP API 호출 실패: ${url}`, error);
+      throw new HttpException(
+        'OTP API 호출 실패',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
   }
   /**
    * 모든 경로를 조회하여 필요한 정보만 반환
@@ -134,7 +153,7 @@ export class RoutesService {
       this.getOtpRoutes(fromAddress, toAddress, {
         mode: 'TRANSIT,WALK',
         transitModes: 'BUS,SUBWAY',
-        numItineraries: 8,
+        numItineraries: 4,
         optimize: 'QUICK',
         maxPreTransitTime: 1200,
         maxWalkDistance: 3000,
@@ -269,8 +288,8 @@ export class RoutesService {
       let extractedStartVehicleTime: string | undefined;
       let extractedRouteType: string | undefined;
       let extractedCityCode: string | undefined;
-      let extractedDepartureStopId: string | undefined;
-      let extractedBusId: string | undefined;
+      let extractedNodeId: string | undefined;
+      let extractedRouteId: string | undefined;
 
       for (const leg of transitLegs) {
         if (leg.mode === 'SUBWAY') {
@@ -288,16 +307,16 @@ export class RoutesService {
             leg.routeId?.split('TAGO_')[1] ?? leg.routeShortName ?? '';
 
           // 첫 번째 버스 leg에서만 정보 추출
-          if (!extractedDepartureStopId && nodeId) {
-            extractedDepartureStopId = nodeId;
+          if (!extractedNodeId && nodeId) {
+            extractedNodeId = nodeId;
             console.log(
-              `[getAllRoutes][BusInfo] Extracted departureStopId: ${extractedDepartureStopId}`,
+              `[getAllRoutes][BusInfo] Extracted nodeId: ${extractedNodeId}`,
             );
           }
-          if (!extractedBusId && routeId) {
-            extractedBusId = routeId;
+          if (!extractedRouteId && routeId) {
+            extractedRouteId = routeId;
             console.log(
-              `[getAllRoutes][BusInfo] Extracted busId: ${extractedBusId}`,
+              `[getAllRoutes][BusInfo] Extracted routeId: ${extractedRouteId}`,
             );
           }
 
@@ -477,17 +496,16 @@ export class RoutesService {
         startvehicletime: extractedStartVehicleTime,
         routetp: extractedRouteType,
         cityCode: extractedCityCode,
-        departureStopId: extractedDepartureStopId,
-        busId: extractedBusId,
+        nodeId: extractedNodeId,
+        routeId: extractedRouteId,
       };
 
       console.log(`[getAllRoutes][Main] Final main object for route:`, {
         startvehicletime: extractedStartVehicleTime,
         routetp: extractedRouteType,
         cityCode: extractedCityCode,
-        departureStopId: extractedDepartureStopId,
-        busId: extractedBusId,
-        routeShortNames: main.routeShortNames,
+        nodeId: extractedNodeId,
+        routeId: extractedRouteId,
       });
       const sub = legs.map((l) => ({
         mode: l.mode,

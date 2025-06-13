@@ -58,10 +58,10 @@ export class RouteSummaryDto {
   cityCode?: string;
 
   @IsString()
-  departureStopId?: string;
+  nodeId?: string;
 
   @IsString()
-  busId?: string;
+  routeId?: string;
 }
 
 export class AllRoutesSummaryDataDto {

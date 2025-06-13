@@ -9,6 +9,7 @@ import {
   Inject,
   BadRequestException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -30,7 +31,11 @@ import {
 import type { Cache } from 'cache-manager';
 import { RouteDetailRequestDto } from './dto/route-detail-request.dto';
 import { RouteDetailResponseDto } from './dto/route-detail-response.dto';
+import { RouteSaveRequestDto } from './dto/route-save-request.dto';
 import { createHash } from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
+import { UsersService } from '@/users/users.service';
+import { AlarmService } from '@/alarm/alarm.service';
 
 @Controller('traffic/routes')
 export class RoutesController {
@@ -41,6 +46,8 @@ export class RoutesController {
     private readonly savedRouteRepo: Repository<SavedRoute>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    private readonly usersService: UsersService,
+    private readonly alarmService: AlarmService,
   ) {}
 
   @Post()
@@ -48,20 +55,21 @@ export class RoutesController {
     @Body() dto: RouteRequestDto,
   ): Promise<AllRoutesSummaryResponseDto> {
     this.logger.log(`getAllRoutes request received: ${JSON.stringify(dto)}`);
-    // 1) 모든 경로 raw 데이터 조회
+    // 1) 모든 경로 raw 데이터 조회 (plan to arrive by specified time)
     const rawRoutes = await this.routesService.getAllRoutes(
       dto.fromAddress,
       dto.toAddress,
       {
         date: dto.date,
         time: dto.time,
-        arriveBy: dto.arriveBy,
+        arriveBy: true,
       },
     );
     // 2) cache에 저장 (TTL 60초) - hash 기반 키
-    const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}|${dto.arriveBy}`;
+    const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}`;
     const hash = createHash('md5').update(rawKey).digest('hex');
-    const cacheKey = `routes:${hash}`;
+    const uniqueSuffix = uuidv4();
+    const cacheKey = `routes:${hash}:${uniqueSuffix}`;
     this.logger.log(
       `Caching rawRoutes with key: ${cacheKey}, rawKey: ${rawKey}`,
     );
@@ -87,8 +95,8 @@ export class RoutesController {
           startvehicletime: main.startvehicletime,
           routetp: main.routetp,
           cityCode: main.cityCode,
-          departureStopId: main.departureStopId,
-          busId: main.busId,
+          nodeId: main.nodeId,
+          routeId: main.routeId,
         });
       });
     });
@@ -107,11 +115,55 @@ export class RoutesController {
 
   @Post('save')
   async saveRoute(
-    @Body() payload: any,
+    @Body() dto: RouteSaveRequestDto,
   ): Promise<{ message: string; id: string }> {
-    console.log('[RoutesController] saveRoute payload:', payload);
-    const saved = await this.savedRouteRepo.save({ payload });
-    return { message: 'Route saved successfully', id: saved.id };
+    this.logger.log(`[RoutesController] saveRoute dto: ${JSON.stringify(dto)}`);
+    try {
+      // Find user by Google ID
+      const user = await this.usersService.findByGoogleId(dto.googleId);
+      if (!user) {
+        throw new NotFoundException(
+          `User with googleId ${dto.googleId} not found`,
+        );
+      }
+      // Parse arrivalTime and save route
+      const arrivalDate = new Date(dto.arrivalTime);
+      const prepMinutes = dto.preparationTime ?? 0;
+      const saved = await this.savedRouteRepo.save({
+        userId: user.id,
+        origin: dto.origin,
+        destination: dto.destination,
+        arrivalTime: arrivalDate,
+        preparationTime: prepMinutes,
+        options: dto.options,
+        category: dto.category ?? 'general',
+        route: {
+          summary: dto.summary,
+          detail: dto.detail,
+          cityCode: dto.detail.cityCode?.toString(),
+          routeId: dto.detail.routeId,
+          nodeId: dto.detail.nodeId,
+          linkIds: Array.isArray(dto.detail.trafficItems)
+            ? dto.detail.trafficItems.map((item) => item.linkId || '')
+            : [],
+          sectionIds: [],
+        },
+      });
+      this.logger.log(
+        `[RoutesController] saveRoute successful: savedRouteId=${saved.id}`,
+      );
+      // Delegate wake-up time calculation to AlarmService
+      await this.alarmService.registerAlarm(
+        user.id,
+        saved.arrivalTime.toISOString(),
+        prepMinutes,
+      );
+      return { message: 'Route saved successfully', id: saved.id };
+    } catch (error) {
+      // Print full error to console for debugging
+      console.error('[RoutesController] saveRoute error:', error);
+      throw error;
+    }
   }
 
   /**

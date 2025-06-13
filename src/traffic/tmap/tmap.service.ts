@@ -12,43 +12,75 @@ export class TmapService {
   constructor(private readonly httpService: HttpService) {}
 
   async geocode(address: string): Promise<TmapGeocodingResponse> {
-    // 주소 문자열 파싱
+    // Parse address components for full text geocoding
     const parts = address.trim().split(/\s+/);
-    const query = {
-      city_do: parts[0] || '',
-      gu_gun: parts[1] || '',
-      dong: parts.slice(2).join(' ') || '',
-    };
+    const city_do = parts[0] || '';
+    const gu_gun = parts[1] || '';
+    const dong = parts[2] || '';
+    // Determine bunji (lot number) and detailAddress (remaining parts)
+    let bunji = '';
+    let detailAddress = '';
+    if (parts.length > 3) {
+      const rest = parts.slice(3);
+      const bunjiPart = rest.find((p) => /\d+-\d+/.test(p)) || '';
+      bunji = bunjiPart;
+      detailAddress = rest.filter((p) => p !== bunjiPart).join(' ');
+    }
 
-    // Tmap API 가이드에 따른 URL 인코딩 및 retry 로직
+    // Tmap API guide for full text geocoding
     const baseUrl =
       process.env.GEOCODING_URL ||
       'https://apis.openapi.sk.com/tmap/geo/geocoding';
     const version = '1';
     const coordType = process.env.TMAP_COORD_TYPE || 'WGS84GEO';
     const appKey = process.env.TMAP_API_KEY || '';
-    const urlWithParams = `${baseUrl}?version=${encodeURIComponent(version)}&city_do=${encodeURIComponent(query.city_do)}&gu_gun=${encodeURIComponent(query.gu_gun)}&dong=${encodeURIComponent(query.dong)}&addressFlag=F00&coordType=${encodeURIComponent(coordType)}&appKey=${encodeURIComponent(appKey)}`;
-    console.log('[TmapService] geocode URL:', urlWithParams);
+    // Try lot number (F01) then road (F02), or road first if no lot number
+    const flags = bunji ? ['F01', 'F02'] : ['F02', 'F01'];
     let rawData: any;
-    try {
-      const response = await firstValueFrom(
-        this.httpService
-          .get<any>(urlWithParams, {
-            headers: { Accept: 'application/json' },
-          })
-          .pipe(retryWhen((errors) => errors.pipe(delay(2000), take(3)))),
-      );
-      console.log('[TmapService.geocode] Raw response:', response.data);
-      rawData = response.data;
-    } catch (error: any) {
-      // 내부 로그를 간소화하여 메시지만 출력
-      console.error(
-        '[TmapService.geocode] HTTP 요청 실패:',
-        error.message ?? error.toString(),
-      );
+    for (const flag of flags) {
+      const params: any = {
+        version,
+        city_do,
+        gu_gun,
+        dong,
+        addressFlag: flag,
+        coordType,
+        appKey,
+      };
+      if (flag === 'F01' && bunji) params.bunji = bunji;
+      if (flag === 'F02' && detailAddress) params.detailAddress = detailAddress;
+      console.log(`[TmapService] geocode attempt flag=${flag}:`, params);
+      try {
+        const response = await firstValueFrom(
+          this.httpService
+            .get<any>(baseUrl, {
+              params,
+              headers: { Accept: 'application/json' },
+            })
+            .pipe(retryWhen((errors) => errors.pipe(delay(2000), take(3)))),
+        );
+        console.log(
+          `[TmapService.geocode] Raw response flag=${flag}:`,
+          response.data,
+        );
+        const coordInfo = response.data.coordinateInfo;
+        const latVal = coordInfo.lat?.trim() ? coordInfo.lat : coordInfo.newLat;
+        const lonVal = coordInfo.lon?.trim() ? coordInfo.lon : coordInfo.newLon;
+        if (latVal && lonVal) {
+          rawData = response.data;
+          break;
+        }
+      } catch (e: any) {
+        console.error(
+          `[TmapService.geocode] attempt flag=${flag} failed:`,
+          e.message,
+        );
+      }
+    }
+    if (!rawData) {
       throw new HttpException(
-        'Tmap 지오코딩 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
-        HttpStatus.SERVICE_UNAVAILABLE,
+        `유효한 좌표를 찾을 수 없습니다: {"city_do":"${city_do}","gu_gun":"${gu_gun}","dong":"${dong}","bunji":"${bunji}","detailAddress":"${detailAddress}"}`,
+        HttpStatus.BAD_REQUEST,
       );
     }
     const coord = rawData.coordinateInfo;

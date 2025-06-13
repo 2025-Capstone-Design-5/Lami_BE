@@ -14,6 +14,7 @@ import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { Buffer } from 'buffer';
 import { UsersService } from '../users/users.service';
+import { UserRole } from '../users/user.entity';
 
 @Controller('auth')
 export class AuthController {
@@ -51,9 +52,7 @@ export class AuthController {
     },
   ) {
     const { code, codeVerifier, platform } = body;
-    this.logger.log(
-      `exchangeCode request - code: ${code}, platform: ${platform}`,
-    );
+    this.logger.log(`Google code exchange requested: platform=${platform}`);
     try {
       const tokens = await this.authService.exchangeCodeForTokens(
         code,
@@ -76,6 +75,7 @@ export class AuthController {
         googleId,
         email,
         name,
+        role: UserRole.GOOGLE,
       });
       await this.usersService.updateUserTokens(
         googleId,
@@ -83,7 +83,9 @@ export class AuthController {
         tokens.refresh_token,
         new Date(),
       );
-      this.logger.log(`User saved with ID: ${user.id}`);
+      this.logger.log(
+        `Google login successful for googleId=${googleId}, userId=${user.id}`,
+      );
       return {
         message: 'Tokens obtained',
         data: {
@@ -99,5 +101,23 @@ export class AuthController {
       );
       throw new HttpException('Token exchange failed', HttpStatus.BAD_REQUEST);
     }
+  }
+
+  /**
+   * POST /auth/guest - guest login as ROOT role
+   */
+  @Post('guest')
+  @HttpCode(HttpStatus.OK)
+  async guestLogin() {
+    this.logger.log('Guest login requested');
+    const guestGoogleId = 'guest';
+    const user = await this.usersService.findOrCreate({
+      googleId: guestGoogleId,
+      email: 'guest@localhost',
+      name: 'Guest Root',
+      role: UserRole.ROOT,
+    });
+    this.logger.log(`Guest login successful: userId=${user.id}`);
+    return { message: 'Guest login successful', data: user };
   }
 }

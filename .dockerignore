@@ -1,0 +1,23 @@
+# Exclude node modules to avoid permission issues and reduce context size
+node_modules/
+
+# Exclude local build outputs
+dist/
+
+# Exclude logs
+npm-debug.log
+yarn-debug.log
+*.log
+
+# Exclude Docker and compose files
+Dockerfile*
+docker-compose.yaml
+
+# Exclude macOS system files
+.DS_Store
+
+# Exclude version control metadata
+.git/
+
+# Exclude environment files
+.env 

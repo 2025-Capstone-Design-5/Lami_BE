@@ -25,7 +25,14 @@ export class UsersService {
   async findOrCreate(data: Partial<User>): Promise<User> {
     let user = await this.findByGoogleId(data.googleId!);
     if (!user) {
+      // Create new user with provided role (or default)
       user = await this.createUser(data);
+    } else {
+      // If role provided and different, update the user's role
+      if (data.role && user.role !== data.role) {
+        user.role = data.role;
+        user = await this.usersRepository.save(user);
+      }
     }
     return user;
   }

@@ -1,46 +1,30 @@
-import {
-  Entity,
-  Column,
-  PrimaryGeneratedColumn,
-  ManyToOne,
-  OneToMany,
-} from 'typeorm';
+import { Entity, Column, OneToOne } from 'typeorm';
+import { BaseIdEntity } from '@/common/entities/base-id.entity';
 import { SavedRoute } from './saved-route.entity';
-import { RouteRealtimeParam } from './route-realtime-param.entity';
 
 @Entity('routes')
-export class Route {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @ManyToOne(() => SavedRoute, (savedRoute) => savedRoute.routes, {
-    onDelete: 'CASCADE',
-  })
+export class Route extends BaseIdEntity {
+  @OneToOne(() => SavedRoute, (sr) => sr.route)
   savedRoute: SavedRoute;
 
-  @Column()
-  category: string;
+  @Column({ type: 'json' })
+  summary: any;
 
-  @Column('int')
-  duration: number;
+  @Column({ type: 'json' })
+  detail: any;
+
+  @Column({ nullable: true })
+  cityCode?: string;
+
+  @Column({ nullable: true })
+  routeId?: string;
+
+  @Column({ nullable: true })
+  nodeId?: string;
 
   @Column('text', { array: true, default: [] })
-  modes: string[];
+  linkIds: string[];
 
   @Column('text', { array: true, default: [] })
-  routeShortNames: string[];
-
-  @Column('text', { array: true, default: [] })
-  stops: string[];
-
-  @Column('text', { array: true, default: [] })
-  stopIds: string[];
-
-  @Column({ type: 'json', nullable: true })
-  details: any;
-
-  @OneToMany(() => RouteRealtimeParam, (p: RouteRealtimeParam) => p.route, {
-    cascade: true,
-  })
-  realtimeParams: RouteRealtimeParam[];
+  sectionIds: string[];
 }
