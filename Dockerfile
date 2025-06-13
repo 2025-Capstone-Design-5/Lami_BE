@@ -5,7 +5,10 @@ ENV NPM_CONFIG_LOGLEVEL=error
 
 # package.json 설치 (reproducible, prod-only)
 COPY package*.json ./
-RUN npm ci --omit=dev --loglevel=error
+RUN npm ci --loglevel=error
+
+# NestJS CLI 전역 설치
+RUN npm install -g @nestjs/cli
 
 # 소스 복사 및 빌드
 COPY . .

@@ -21,7 +21,7 @@ export class StreamCallback extends BaseCallbackHandler {
   ): Promise<void> {
     // accumulate tokens for reasoning
     this.reasoningBuffer += token;
-    this.sendEvent('message', token);
+    this.sendEvent('token', token);
   }
 
   // Emit event when a tool/function is invoked
@@ -58,7 +58,7 @@ export class StreamCallback extends BaseCallbackHandler {
       default:
         statusMessage = `🔧 ${toolName} 호출 중입니다...`;
     }
-    this.sendEvent('status', statusMessage);
+    // status already emitted in handleAgentAction; skipping here
   }
 
   async handleAgentAction(
@@ -72,6 +72,24 @@ export class StreamCallback extends BaseCallbackHandler {
     // Clear any buffered tokens
     this.reasoningBuffer = '';
     this.sendEvent('action_start', { tool, toolInput, reason });
+    // Explicit status event for known tools
+    let statusMessage = '';
+    switch (tool) {
+      case 'route-summary':
+        statusMessage = '🗺️ 경로 탐색 중입니다...';
+        break;
+      case 'route-realtimeArrivalInfo':
+        statusMessage = '🕒 실시간 도착 정보 조회 중입니다...';
+        break;
+      case 'route-realtime-traffic':
+        statusMessage = '🚦 실시간 교통 상황 조회 중입니다...';
+        break;
+      default:
+        statusMessage = '';
+    }
+    if (statusMessage) {
+      this.sendEvent('status', statusMessage);
+    }
   }
 
   async handleAgentEnd(
@@ -80,6 +98,7 @@ export class StreamCallback extends BaseCallbackHandler {
     _parentRunId?: string,
   ): Promise<void> {
     // No-op: suppress raw agent observation events
+    // The final event will be sent by runStream
   }
 
   // Emit event when a tool/function finishes execution
@@ -94,7 +113,20 @@ export class StreamCallback extends BaseCallbackHandler {
       Array.isArray(tags) && tags.length > 0
         ? tags[0]
         : (this.toolNameMap[runId] ?? 'unknown');
-    this.sendEvent('action_result', { tool: toolName, result: output });
+    // If output is a string, try to parse it as JSON
+    let result = output;
+    if (typeof output === 'string') {
+      try {
+        result = JSON.parse(output);
+      } catch (e) {
+        // If parsing fails, use the original string
+        result = output;
+      }
+    }
+    // Only send action_result for non-final events
+    if (toolName !== 'final') {
+      this.sendEvent('action_result', { tool: toolName, result });
+    }
     // clean up mapping
     delete this.toolNameMap[runId];
   }

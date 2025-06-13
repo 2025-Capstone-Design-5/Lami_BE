@@ -18,8 +18,9 @@ import { SummaryPipelineChain } from '../pipelines/summary-pipeline.chain';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { createHash } from 'crypto';
-import { LLMChain } from 'langchain/chains';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { RoutesService } from '../../traffic/routes/routes.service';
+import { ChainValues } from '@langchain/core/utils/types';
+import { CallbackManager } from '@langchain/core/callbacks/manager';
 
 @Injectable()
 export class AgentService implements OnModuleInit {
@@ -28,9 +29,9 @@ export class AgentService implements OnModuleInit {
   private llm: ChatOpenAI;
   private agent: AgentExecutor;
   private readonly logger = new Logger(AgentService.name);
-  private classificationChain: LLMChain;
 
   constructor(
+    private readonly routesService: RoutesService,
     private readonly routeChain: RoutePipelineChain,
     private readonly alarmChain: AlarmPipelineChain,
     private readonly calendarChain: CalendarPipelineChain,
@@ -54,210 +55,278 @@ export class AgentService implements OnModuleInit {
       temperature: 0,
       streaming: true,
     });
-    // Dedicated non-streaming LLM for robust classification
-    const classificationLLM = new ChatOpenAI({
-      openAIApiKey: apiKey,
-      temperature: 0,
-      streaming: false,
-      modelName:
-        this.configService.get<string>('OPENAI_CLASSIFICATION_MODEL') ||
-        'gpt-3.5-turbo',
-    });
 
-    // Enhanced few-shot classification prompt with examples
-    const classifyPrompt = new PromptTemplate({
-      template: `아래 예시를 참고하여, 주어진 사용자 입력에 대해 호출할 툴을 결정하세요. 가능한 값(하나만): route-summary, route-realtimeArrivalInfo, route-realtime-traffic, alarm, calendar, fallback.
-예시:
-사용자 입력: '서울역에서 강남역까지 가는 방법을 알려줘' → route-summary
-사용자 입력: '알람 8시에 깨워줘' → alarm
-사용자 입력: '오늘 일정 추가해 줘' → calendar
-사용자 입력: '일반 대화 테스트' → fallback
-사용자 입력: '{input}'`,
-      inputVariables: ['input'],
-    });
-    this.classificationChain = new LLMChain({
-      llm: classificationLLM,
-      prompt: classifyPrompt,
-    });
+    this.agent = await initializeAgentExecutorWithOptions(
+      [
+        tool(
+          async ({ fromAddress, toAddress, date, time }) => {
+            if (!fromAddress) return '출발지를 알려주세요.';
+            if (!toAddress) return '도착지를 알려주세요.';
+            if (!date) return '날짜를 알려주세요. (YYYY-MM-DD)';
+            if (!time) return '시간을 알려주세요. (HH:MM)';
+            try {
+              // Fetch raw routes
+              const rawRoutes = await this.routesService.getAllRoutes(
+                fromAddress,
+                toAddress,
+                { date, time },
+              );
 
-    const tools = [
-      // 1) 경로 요약
-      tool(
-        async ({ fromAddress, toAddress, date, time }) => {
-          // Validate required fields and prompt user if missing
-          if (!fromAddress) return '출발지를 알려주세요. (예: 서울역)';
-          if (!toAddress) return '도착지를 알려주세요. (예: 김포공항)';
-          if (!date) return '날짜를 알려주세요. (YYYY-MM-DD)';
-          if (!time) return '시간을 알려주세요. (HH:MM)';
-          // All inputs present, call the route pipeline to get summary
-          const out = await this.routeChain.call({
-            fromAddress,
-            toAddress,
-            date,
-            time,
-          });
-          return out.summary as string;
-        },
-        {
-          name: 'route-summary',
-          description: '출발지·도착지·날짜·시간 기준 경로 요약 조회',
-          schema: {
-            type: 'object',
-            properties: {
-              fromAddress: { type: 'string' },
-              toAddress: { type: 'string' },
-              date: { type: 'string' },
-              time: { type: 'string' },
+              // Get text summary for display
+              const summary = await this.summaryChain.call(rawRoutes);
+
+              // Build summaryRoutes array for UI display
+              const summaryRoutes: Array<{
+                category: string;
+                duration: number;
+                walkDurations: number[];
+                transitDurations: number[];
+                modes: string[];
+                routeShortNames: string[];
+                transferCount: number;
+                transfers: any[];
+                realtimeArrivalTimes: any[];
+                trafficItems: any[];
+                forecast: any[];
+                stops: any[];
+                startvehicletime?: any;
+                routetp?: any;
+                cityCode?: string;
+                nodeId?: string;
+                routeId?: string;
+              }> = [];
+              Object.entries(rawRoutes).forEach(([category, routeList]) => {
+                (routeList as any[]).forEach((route) => {
+                  const main = route.main;
+                  summaryRoutes.push({
+                    category,
+                    duration: main.duration,
+                    walkDurations: main.walkDurations,
+                    transitDurations: main.transitDurations,
+                    modes: main.modes,
+                    routeShortNames: main.routeShortNames,
+                    transferCount: main.transferCount,
+                    transfers: main.transfers,
+                    realtimeArrivalTimes: main.realtimeArrivalTimes,
+                    trafficItems: main.trafficItems,
+                    forecast: main.forecast,
+                    stops: main.stops,
+                    startvehicletime: main.startvehicletime,
+                    routetp: main.routetp,
+                    cityCode: main.cityCode,
+                    nodeId: main.nodeId,
+                    routeId: main.routeId,
+                  });
+                });
+              });
+
+              // Generate cache key for details lookup
+              const hash = createHash('md5')
+                .update(JSON.stringify(rawRoutes))
+                .digest('hex');
+              const cacheKey = `agent:routes:${hash}`;
+
+              // Store raw routes in cache
+              await this.cacheManager.set(cacheKey, rawRoutes, 500 * 1000);
+
+              // Return formatted data as JSON string
+              return JSON.stringify({
+                summary,
+                cacheKey,
+                routes: summaryRoutes,
+              });
+            } catch (error) {
+              this.logger.error(
+                `Route summary error: ${error.message}`,
+                error.stack,
+              );
+              return `경로 조회 중 오류가 발생했습니다: ${error.message}`;
+            }
+          },
+          {
+            name: 'route-summary',
+            description:
+              '경로 요약을 생성합니다. 출발지, 도착지, 날짜, 시간이 필요합니다.',
+            schema: {
+              type: 'object',
+              properties: {
+                fromAddress: {
+                  type: 'string',
+                  description: '출발지 주소',
+                },
+                toAddress: {
+                  type: 'string',
+                  description: '도착지 주소',
+                },
+                date: {
+                  type: 'string',
+                  description: '날짜 (YYYY-MM-DD)',
+                },
+                time: {
+                  type: 'string',
+                  description: '시간 (HH:MM)',
+                },
+              },
+              required: ['fromAddress', 'toAddress', 'date', 'time'],
             },
-            required: ['fromAddress', 'toAddress', 'date', 'time'],
+            returnDirect: true,
           },
-          returnDirect: true,
-        },
-      ),
-      // 2) 실시간 도착 정보
-      tool(
-        async (args: { fromAddress: string; toAddress: string }) => {
-          const { fromAddress, toAddress } = args;
-          const info = await this.realtimeArrivalChain.call({
-            fromAddress,
-            toAddress,
-          });
-          return JSON.stringify(info.arrivalInfo);
-        },
-        {
-          name: 'route-realtimeArrivalInfo',
-          description: '출발지·도착지에 대한 실시간 도착 정보 조회',
-          schema: {
-            type: 'object',
-            properties: {
-              fromAddress: { type: 'string' },
-              toAddress: { type: 'string' },
+        ),
+        // 2) 실시간 도착 정보
+        tool(
+          async (args: { fromAddress: string; toAddress: string }) => {
+            const { fromAddress, toAddress } = args;
+            const info = await this.realtimeArrivalChain.call({
+              fromAddress,
+              toAddress,
+            });
+            return JSON.stringify(info.arrivalInfo);
+          },
+          {
+            name: 'route-realtimeArrivalInfo',
+            description: '출발지·도착지에 대한 실시간 도착 정보 조회',
+            schema: {
+              type: 'object',
+              properties: {
+                fromAddress: { type: 'string' },
+                toAddress: { type: 'string' },
+              },
+              required: ['fromAddress', 'toAddress'],
             },
-            required: ['fromAddress', 'toAddress'],
+            returnDirect: true,
           },
-          returnDirect: true,
-        },
-      ),
-      // 3) 실시간 교통 상황
-      tool(
-        async (args: { fromAddress: string; toAddress: string }) => {
-          const { fromAddress, toAddress } = args;
-          const traffic = await this.realtimeTrafficChain.call({
-            fromAddress,
-            toAddress,
-          });
-          return JSON.stringify(traffic);
-        },
-        {
-          name: 'route-realtime-traffic',
-          description: '출발지·도착지 간 실시간 교통 상황 조회',
-          schema: {
-            type: 'object',
-            properties: {
-              fromAddress: { type: 'string' },
-              toAddress: { type: 'string' },
+        ),
+        // 3) 실시간 교통 상황
+        tool(
+          async (args: { fromAddress: string; toAddress: string }) => {
+            const { fromAddress, toAddress } = args;
+            const traffic = await this.realtimeTrafficChain.call({
+              fromAddress,
+              toAddress,
+            });
+            return JSON.stringify(traffic);
+          },
+          {
+            name: 'route-realtime-traffic',
+            description: '출발지·도착지 간 실시간 교통 상황 조회',
+            schema: {
+              type: 'object',
+              properties: {
+                fromAddress: { type: 'string' },
+                toAddress: { type: 'string' },
+              },
+              required: ['fromAddress', 'toAddress'],
             },
-            required: ['fromAddress', 'toAddress'],
+            returnDirect: true,
           },
-          returnDirect: true,
-        },
-      ),
-      tool(
-        async (args: { time: string; message: string }) => {
-          const { time, message } = args;
-          const output = await this.alarmChain.call({ time, message });
-          return output.confirmation;
-        },
-        {
-          name: 'alarm',
-          description:
-            '알람 설정을 위한 시간과 메시지를 받아 알람을 설정합니다',
-          schema: {
-            type: 'object',
-            properties: {
-              time: { type: 'string' },
-              message: { type: 'string' },
+        ),
+        tool(
+          async (args: { time: string; message: string }) => {
+            const { time, message } = args;
+            const output = await this.alarmChain.call({ time, message });
+            return output.confirmation;
+          },
+          {
+            name: 'alarm',
+            description:
+              '알람 설정을 위한 시간과 메시지를 받아 알람을 설정합니다',
+            schema: {
+              type: 'object',
+              properties: {
+                time: { type: 'string' },
+                message: { type: 'string' },
+              },
+              required: ['time', 'message'],
             },
-            required: ['time', 'message'],
+            returnDirect: true,
           },
-          returnDirect: true,
-        },
-      ),
-      tool(
-        async (args: { date: string; eventDetails: string }) => {
-          const { date, eventDetails } = args;
-          const output = await this.calendarChain.call({ date, eventDetails });
-          return output.confirmation;
-        },
-        {
-          name: 'calendar',
-          description: '날짜와 이벤트 세부 정보를 받아 일정을 등록합니다',
-          schema: {
-            type: 'object',
-            properties: {
-              date: { type: 'string' },
-              eventDetails: { type: 'string' },
+        ),
+        tool(
+          async (args: { date: string; eventDetails: string }) => {
+            const { date, eventDetails } = args;
+            const output = await this.calendarChain.call({
+              date,
+              eventDetails,
+            });
+            return output.confirmation;
+          },
+          {
+            name: 'calendar',
+            description: '날짜와 이벤트 세부 정보를 받아 일정을 등록합니다',
+            schema: {
+              type: 'object',
+              properties: {
+                date: { type: 'string' },
+                eventDetails: { type: 'string' },
+              },
+              required: ['date', 'eventDetails'],
             },
-            required: ['date', 'eventDetails'],
+            returnDirect: true,
           },
-          returnDirect: true,
-        },
-      ),
-      tool(
-        async (args: { input: string }) => {
-          const { input } = args;
-          const out = await this.fallbackChain.call({ input });
-          return out.output;
-        },
-        {
-          name: 'fallback',
-          description:
-            '일반 대화, 인삿말, 기능 문의 등을 처리하는 함수입니다. 경로, 알람, 일정 기능 외 모든 입력에 대해 이 함수를 호출해야 합니다.',
-          schema: {
-            type: 'object',
-            properties: { input: { type: 'string' } },
-            required: ['input'],
+        ),
+        tool(
+          async (args: { input: string }) => {
+            const { input } = args;
+            const out = await this.fallbackChain.call({ input });
+            return out.output;
           },
-          returnDirect: true,
+          {
+            name: 'fallback',
+            description:
+              '일반 대화, 인삿말, 기능 문의 등을 처리하는 함수입니다. 경로, 알람, 일정 기능 외 모든 입력에 대해 이 함수를 호출해야 합니다.',
+            schema: {
+              type: 'object',
+              properties: { input: { type: 'string' } },
+              required: ['input'],
+            },
+            returnDirect: true,
+          },
+        ),
+      ],
+      this.llm,
+      {
+        // Use a textual ReAct agent to surface chain-of-thought reasoning
+        agentType: 'structured-chat-zero-shot-react-description',
+        maxIterations: 8,
+        returnIntermediateSteps: true,
+        verbose: true,
+        handleParsingErrors: (e) => {
+          const msg = e.message || '';
+          if (msg.includes('fromAddress')) {
+            return '🚗 출발지가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+          }
+          if (msg.includes('toAddress')) {
+            return '🏁 도착지가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+          }
+          if (msg.includes('date')) {
+            return '📅 날짜가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+          }
+          if (msg.includes('time')) {
+            return '⏰ 시간이 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
+          }
+          return '입력 형식을 확인해주세요. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, YYYY-MM-DD, HH:MM"';
         },
-      ),
-    ];
-    this.agent = await initializeAgentExecutorWithOptions(tools, this.llm, {
-      // Use a textual ReAct agent to surface chain-of-thought reasoning
-      agentType: 'structured-chat-zero-shot-react-description',
-      maxIterations: 8,
-      returnIntermediateSteps: true,
-      verbose: true,
-      handleParsingErrors: (e) => {
-        const msg = e.message || '';
-        if (msg.includes('fromAddress')) {
-          return '🚗 출발지가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
-        }
-        if (msg.includes('toAddress')) {
-          return '🏁 도착지가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
-        }
-        if (msg.includes('date')) {
-          return '📅 날짜가 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
-        }
-        if (msg.includes('time')) {
-          return '⏰ 시간이 누락되었습니다. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, 2025-06-15, 14:30"';
-        }
-        return '입력 형식을 확인해주세요. 예시: "서울역에서 강남역까지 가는 경로를 알려줘, YYYY-MM-DD, HH:MM"';
-      },
-      handleToolRuntimeErrors: (e) => `Tool error: ${e.message}`,
-      agentArgs: {
-        prefix: `당신은 Lami라는 다용도 AI 비서입니다. 도구를 호출하기 전에 단계별로 사고 과정을 모두 한국어로 작성하세요.
-사용자 입력이 "<fromAddress>에서 <toAddress>까지" 패턴을 포함하고 YYYY-MM-DD 형식의 날짜 및 HH:MM 형식의 시간을 포함하면 경로 요약 요청으로 간주하고, 추가 질문 없이 즉시 'route-summary' 도구를 다음 JSON {{"fromAddress": "<fromAddress>", "toAddress": "<toAddress>", "date": "<date>", "time": "<time>"}} 형태로 호출하세요.
+        handleToolRuntimeErrors: (e) => `Tool error: ${e.message}`,
+        agentArgs: {
+          prefix: `당신은 Lami라는 다용도 AI 비서입니다. 도구를 호출하기 전에 단계별로 사고 과정을 모두 한국어로 작성하세요.
+
+만약 이전 대화 메모리에 routes(경로 데이터)가 저장되어 있다면, 사용자의 후속 질문(예: '가장 빠른 경로는?')에는 새로 도구를 호출하지 말고, 기존 routes 데이터를 분석해서 답변하세요.
+메모리에 저장된 routes 데이터는 경로 정보를 담은 배열 형태로 저장되어 있으며, 각 경로는 duration(소요 시간), modes(이동 수단), routeShortNames(노선명) 등의 정보를 포함합니다.
+
+사용자 입력이 "<fromAddress>에서 <toAddress>까지" 패턴을 포함하고 YYYY-MM-DD 형식의 날짜 및 HH:MM 형식의 시간을 포함하면 경로 요약 요청으로 간주하고, 추가 질문 없이 즉시 'route-summary' 도구를 호출하세요.
 파라미터가 누락된 경우, 누락된 항목(출발지, 도착지, 날짜, 시간)에 대해 구체적으로 한국어로 질문하세요.
 실시간 도착 정보 요청에는 'route-realtimeArrivalInfo'를 호출하세요.
 실시간 교통 상황 요청에는 'route-realtime-traffic'를 호출하세요.
 알람 설정 요청에는 'alarm'을 호출하세요.
 일정 등록 요청에는 'calendar'를 호출하세요.
-일반 대화 요청에는 'fallback'을 호출하세요.`,
+일반 대화 요청에는 'fallback'을 호출하세요. fallback 도구를 호출할 때는 반드시 {{"input": "사용자 입력"}} 형태로 호출해야 합니다.`,
+          suffix: `사용자 입력: {input}`,
+        },
       },
-    });
+    );
     this.logger.log(
-      'Agent initialized with tools: ' + tools.map((t) => t.name).join(', '),
+      'Agent initialized with tools: ' +
+        this.agent.tools.map((t) => t.name).join(', '),
     );
 
     // Initialize conversation memory
@@ -270,12 +339,10 @@ export class AgentService implements OnModuleInit {
 
   async run(input: string) {
     if (!this.agent) await this.initAgent();
-    // Reset conversation memory for each request
-    this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
-    this.summaryMemory = new ConversationSummaryMemory({
-      memoryKey: 'chat_history',
-      llm: this.llm,
-    });
+    // Get previous memory context
+    const memoryVariables = await this.bufferMemory.loadMemoryVariables({});
+    this.logger.debug('Memory context:', memoryVariables);
+
     this.logger.log(`Agent received input: ${input}`);
     // Invoke agent and capture intermediate steps
     const chainOutput = (await this.agent.call({ input })) as any;
@@ -289,24 +356,32 @@ export class AgentService implements OnModuleInit {
     }
     // 1) 캐시 저장 및 요약 체인: 경로 응답일 경우 메모리 초기화 후 요약만 반환, 상세는 캐시에 저장
     if (Array.isArray(result)) {
-      // Clear previous conversation memory for route context
-      this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
-      this.summaryMemory = new ConversationSummaryMemory({
-        memoryKey: 'chat_history',
-        llm: this.llm,
-      });
+      // Handle route response without clearing previous memory, so follow-ups have context
       const rawRoutes = result;
       const hash = createHash('md5')
         .update(JSON.stringify(rawRoutes))
         .digest('hex');
       const cacheKey = `agent:routes:${hash}`;
-      await this.cacheManager.set(cacheKey, rawRoutes, 60);
+      await this.cacheManager.set(cacheKey, rawRoutes, 500 * 1000);
       const summary = await this.summaryChain.call(rawRoutes);
       result = { summary, cacheKey };
     }
-    // 2) 메모리 관리: 대화 기록 및 요약 저장
-    await this.bufferMemory.saveContext({ input }, { output: result });
-    await this.summaryMemory.saveContext({ input }, { output: result });
+    // 2) 메모리 관리: 대화 기록 및 요약 저장 (routes가 있으면 함께 저장)
+    let memoryPayload: any = { output: result };
+    if (
+      typeof result === 'object' &&
+      result !== null &&
+      (result.routes || result.summaryRoutes)
+    ) {
+      // Store routes in a more structured format
+      memoryPayload.routes = {
+        data: result.routes || result.summaryRoutes,
+        timestamp: new Date().toISOString(),
+        type: 'route_data',
+      };
+    }
+    await this.bufferMemory.saveContext({ input }, memoryPayload);
+    await this.summaryMemory.saveContext({ input }, memoryPayload);
     this.logger.log(`Agent output: ${JSON.stringify(result)}`);
     return result;
   }
@@ -316,73 +391,87 @@ export class AgentService implements OnModuleInit {
    */
   async runStream(
     input: string,
-    sendEvent: (type: string, data: any) => void,
-  ): Promise<any> {
+    onToken: (token: string) => void,
+    onError: (error: any) => void,
+  ): Promise<void> {
     if (!this.agent) await this.initAgent();
-    // Reset conversation memory for each streaming request
-    this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
-    this.summaryMemory = new ConversationSummaryMemory({
-      memoryKey: 'chat_history',
-      llm: this.llm,
-    });
+    // Get previous memory context
+    const memoryVariables = await this.bufferMemory.loadMemoryVariables({});
+    this.logger.debug('Memory context:', memoryVariables);
+
     this.logger.log(`Agent received streaming input: ${input}`);
-    const callback = new StreamCallback(sendEvent);
-    // Invoke agent and stream callbacks
-    const chainOutput = (await this.agent.call(
-      { input },
-      { callbacks: [callback] },
-    )) as any;
-    const { intermediateSteps = [] } = chainOutput;
-    // Emit intermediate steps (chain-of-thought) safely
-    try {
-      if (Array.isArray(intermediateSteps)) {
-        for (const step of intermediateSteps as any[]) {
-          if (!Array.isArray(step) || step.length < 2) continue;
-          const [action, observation] = step;
-          sendEvent('step', {
-            tool: action.tool,
-            input: action.toolInput,
-            reason: typeof action.log === 'string' ? action.log.trim() : '',
-            observation,
-          });
+    // Load existing memory context from full chat history
+    const memVars = await this.bufferMemory.loadMemoryVariables({});
+    const historyContext = memVars.chat_history || '';
+    // Prepend chat history so agent has full context including routes data
+    const agentInput = historyContext ? `${historyContext}\n${input}` : input;
+
+    // create a callback manager for streaming
+    const manager = CallbackManager.fromHandlers({
+      handleLLMNewToken: (token) => onToken(token),
+      handleLLMError: (err) => onError(err),
+      handleAgentAction: (action) => {
+        const { tool, toolInput, log } = action;
+        onToken(
+          JSON.stringify({
+            type: 'action_start',
+            payload: { tool, toolInput, reason: (log ?? '').trim() },
+          }),
+        );
+      },
+      handleToolEnd: (output, runId, parentRunId, tags) => {
+        const toolName =
+          Array.isArray(tags) && tags.length > 0 ? tags[0] : runId;
+        let result = output;
+        if (typeof output === 'string') {
+          try {
+            result = JSON.parse(output);
+          } catch {}
         }
+        onToken(
+          JSON.stringify({
+            type: 'action_result',
+            payload: { tool: toolName, result },
+          }),
+        );
+      },
+    });
+    // Invoke agent with callbacks, passing chat-history-augmented input
+    const chainOutput = (await this.agent.call(
+      { input: agentInput },
+      { callbacks: manager },
+    )) as ChainValues;
+    this.logger.log('Agent chain output:', chainOutput);
+    const result = chainOutput.output;
+    this.logger.log('Agent result:', result);
+
+    // send intermediate steps and final
+    onToken(
+      JSON.stringify({
+        type: 'final',
+        payload: result,
+        intermediateSteps: chainOutput.intermediateSteps,
+      }),
+    );
+
+    // Save conversation memory after streaming
+    try {
+      let memoryPayload: any = { output: result };
+      if (
+        typeof result === 'object' &&
+        result !== null &&
+        (result.routes || result.summaryRoutes)
+      ) {
+        memoryPayload.routes = {
+          data: result.routes || result.summaryRoutes,
+          timestamp: new Date().toISOString(),
+          type: 'route_data',
+        };
       }
-    } catch (e: any) {
-      this.logger.error(
-        `Error streaming intermediateSteps: ${e.message}`,
-        e.stack,
-      );
+      await this.bufferMemory.saveContext({ input }, memoryPayload);
+      await this.summaryMemory.saveContext({ input }, memoryPayload);
+    } catch (error) {
+      this.logger.error('Stream memory save error:', error);
     }
-    const { output: raw } = chainOutput;
-    let result: any;
-    try {
-      result = JSON.parse(raw);
-    } catch {
-      result = raw;
-    }
-    // 캐시 저장 및 요약 체인 적용: 메모리 초기화 후 요약만 반환, 상세는 캐시에 저장
-    if (Array.isArray(result)) {
-      this.bufferMemory = new BufferMemory({ memoryKey: 'chat_history' });
-      this.summaryMemory = new ConversationSummaryMemory({
-        memoryKey: 'chat_history',
-        llm: this.llm,
-      });
-      const rawRoutes = result;
-      const hash = createHash('md5')
-        .update(JSON.stringify(rawRoutes))
-        .digest('hex');
-      const cacheKey = `agent:routes:${hash}`;
-      await this.cacheManager.set(cacheKey, rawRoutes, 60);
-      const summary = await this.summaryChain.call(rawRoutes);
-      result = { summary, cacheKey };
-    }
-    // 메모리 저장 (streaming에서 에러시 흐름 중단 방지)
-    try {
-      await this.bufferMemory.saveContext({ input }, { output: result });
-      await this.summaryMemory.saveContext({ input }, { output: result });
-    } catch (e) {
-      this.logger.error(`Memory save error: ${e.message}`, e.stack);
-    }
-    return result;
   }
 }

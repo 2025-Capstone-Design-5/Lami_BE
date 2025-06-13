@@ -63,7 +63,11 @@ export class AgentController {
       res.write(`data: ${JSON.stringify({ type, payload: data })}\n\n`);
     try {
       this.logger.log(`Agent chat stream start for input: ${input}`);
-      const result = await this.agentService.runStream(input, sendEvent);
+      const result = await this.agentService.runStream(
+        input,
+        (token) => sendEvent('token', token),
+        (error) => sendEvent('error', { message: error.message }),
+      );
       sendEvent('final', result);
     } catch (error) {
       sendEvent('error', { message: error.message });
