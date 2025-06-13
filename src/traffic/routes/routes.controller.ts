@@ -33,6 +33,7 @@ import { RouteDetailRequestDto } from './dto/route-detail-request.dto';
 import { RouteDetailResponseDto } from './dto/route-detail-response.dto';
 import { RouteSaveRequestDto } from './dto/route-save-request.dto';
 import { createHash } from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from '@/users/users.service';
 import { AlarmService } from '@/alarm/alarm.service';
 
@@ -54,19 +55,21 @@ export class RoutesController {
     @Body() dto: RouteRequestDto,
   ): Promise<AllRoutesSummaryResponseDto> {
     this.logger.log(`getAllRoutes request received: ${JSON.stringify(dto)}`);
-    // 1) 모든 경로 raw 데이터 조회
+    // 1) 모든 경로 raw 데이터 조회 (plan to arrive by specified time)
     const rawRoutes = await this.routesService.getAllRoutes(
       dto.fromAddress,
       dto.toAddress,
       {
         date: dto.date,
         time: dto.time,
+        arriveBy: true,
       },
     );
     // 2) cache에 저장 (TTL 60초) - hash 기반 키
     const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}`;
     const hash = createHash('md5').update(rawKey).digest('hex');
-    const cacheKey = `routes:${hash}`;
+    const uniqueSuffix = uuidv4();
+    const cacheKey = `routes:${hash}:${uniqueSuffix}`;
     this.logger.log(
       `Caching rawRoutes with key: ${cacheKey}, rawKey: ${rawKey}`,
     );
