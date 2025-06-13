@@ -21,6 +21,7 @@ import { createHash } from 'crypto';
 import { RoutesService } from '../../traffic/routes/routes.service';
 import { ChainValues } from '@langchain/core/utils/types';
 import { CallbackManager } from '@langchain/core/callbacks/manager';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AgentService implements OnModuleInit {
@@ -48,13 +49,25 @@ export class AgentService implements OnModuleInit {
   }
 
   private async initAgent() {
+    const modelName = 'o4-mini-2025-04-16';
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    this.logger.log(`Using LLM model: ${modelName}`);
     // Main streaming LLM for agent reasoning
-    this.llm = new ChatOpenAI({
+    const llmInstance = new ChatOpenAI({
       openAIApiKey: apiKey,
-      temperature: 0,
+      modelName,
+      temperature: 1,
       streaming: true,
     });
+    // Monkey-patch invocationParams to strip 'stop'
+    const llmAny = llmInstance as any;
+    const originalInvocation = llmAny.invocationParams.bind(llmAny);
+    llmAny.invocationParams = (options?: any, extra?: any) => {
+      const params = originalInvocation(options, extra);
+      delete params.stop;
+      return params;
+    };
+    this.llm = llmInstance;
 
     this.agent = await initializeAgentExecutorWithOptions(
       [
@@ -124,7 +137,8 @@ export class AgentService implements OnModuleInit {
               const hash = createHash('md5')
                 .update(JSON.stringify(rawRoutes))
                 .digest('hex');
-              const cacheKey = `agent:routes:${hash}`;
+              const uniqueSuffix = uuidv4();
+              const cacheKey = `agent:routes:${hash}:${uniqueSuffix}`;
 
               // Store raw routes in cache
               await this.cacheManager.set(cacheKey, rawRoutes, 500 * 1000);
@@ -310,10 +324,10 @@ export class AgentService implements OnModuleInit {
         agentArgs: {
           prefix: `당신은 Lami라는 다용도 AI 비서입니다. 도구를 호출하기 전에 단계별로 사고 과정을 모두 한국어로 작성하세요.
 
-만약 이전 대화 메모리에 routes(경로 데이터)가 저장되어 있다면, 사용자의 후속 질문(예: '가장 빠른 경로는?')에는 새로 도구를 호출하지 말고, 기존 routes 데이터를 분석해서 답변하세요.
+만약 이전 대화 메모리에 routes(경로 데이터)가 저장되어 있고, 현재 입력이 '<fromAddress>에서 <toAddress>까지' 형식의 새로운 경로 요청을 포함하지 않는 후속 질문(예: '가장 빠른 경로는?')이라면, 도구를 호출하지 말고 기존 routes 데이터를 분석해서 답변하세요.
 메모리에 저장된 routes 데이터는 경로 정보를 담은 배열 형태로 저장되어 있으며, 각 경로는 duration(소요 시간), modes(이동 수단), routeShortNames(노선명) 등의 정보를 포함합니다.
 
-사용자 입력이 "<fromAddress>에서 <toAddress>까지" 패턴을 포함하고 YYYY-MM-DD 형식의 날짜 및 HH:MM 형식의 시간을 포함하면 경로 요약 요청으로 간주하고, 추가 질문 없이 즉시 'route-summary' 도구를 호출하세요.
+사용자 입력이 출발지와 도착지를 의미하는 구문(예: "...에서 ...까지", "...에서 ...까지 가는 경로 요청")과 날짜(YYYY-MM-DD 또는 YYYY년 MM월 DD일 등) 및 시간(HH:MM 또는 HH시 MM분 등)을 포함하면 경로 요약 요청으로 간주하고, 추가 질문 없이 즉시 'route-summary' 도구를 호출하세요.
 파라미터가 누락된 경우, 누락된 항목(출발지, 도착지, 날짜, 시간)에 대해 구체적으로 한국어로 질문하세요.
 실시간 도착 정보 요청에는 'route-realtimeArrivalInfo'를 호출하세요.
 실시간 교통 상황 요청에는 'route-realtime-traffic'를 호출하세요.
@@ -361,7 +375,8 @@ export class AgentService implements OnModuleInit {
       const hash = createHash('md5')
         .update(JSON.stringify(rawRoutes))
         .digest('hex');
-      const cacheKey = `agent:routes:${hash}`;
+      const uniqueSuffix = uuidv4();
+      const cacheKey = `agent:routes:${hash}:${uniqueSuffix}`;
       await this.cacheManager.set(cacheKey, rawRoutes, 500 * 1000);
       const summary = await this.summaryChain.call(rawRoutes);
       result = { summary, cacheKey };
