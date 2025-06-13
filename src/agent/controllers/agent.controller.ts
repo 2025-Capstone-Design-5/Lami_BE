@@ -43,7 +43,7 @@ export class AgentController {
   }
 
   @Get('test')
-  async test(): Promise<{ response: string }> {
+  test(): { response: string } {
     return { response: 'pong' };
   }
 

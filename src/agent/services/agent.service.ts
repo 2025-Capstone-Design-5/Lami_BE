@@ -13,13 +13,11 @@ import { RealtimeTrafficPipelineChain } from '../pipelines/realtime-traffic-pipe
 import { AlarmPipelineChain } from '../pipelines/alarm-pipeline.chain';
 import { CalendarPipelineChain } from '../pipelines/calendar-pipeline.chain';
 import { FallbackPipelineChain } from '../pipelines/fallback-pipeline.chain';
-import { StreamCallback } from './stream-callback.handler';
 import { SummaryPipelineChain } from '../pipelines/summary-pipeline.chain';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { createHash } from 'crypto';
 import { RoutesService } from '../../traffic/routes/routes.service';
-import { ChainValues } from '@langchain/core/utils/types';
 import { CallbackManager } from '@langchain/core/callbacks/manager';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -382,7 +380,7 @@ export class AgentService implements OnModuleInit {
       result = { summary, cacheKey };
     }
     // 2) 메모리 관리: 대화 기록 및 요약 저장 (routes가 있으면 함께 저장)
-    let memoryPayload: any = { output: result };
+    const memoryPayload: any = { output: result };
     if (
       typeof result === 'object' &&
       result !== null &&
@@ -441,7 +439,9 @@ export class AgentService implements OnModuleInit {
         if (typeof output === 'string') {
           try {
             result = JSON.parse(output);
-          } catch {}
+          } catch {
+            result = output;
+          }
         }
         onToken(
           JSON.stringify({
@@ -452,10 +452,10 @@ export class AgentService implements OnModuleInit {
       },
     });
     // Invoke agent with callbacks, passing chat-history-augmented input
-    const chainOutput = (await this.agent.call(
+    const chainOutput = await this.agent.call(
       { input: agentInput },
       { callbacks: manager },
-    )) as ChainValues;
+    );
     this.logger.log('Agent chain output:', chainOutput);
     const result = chainOutput.output;
     this.logger.log('Agent result:', result);
@@ -471,7 +471,7 @@ export class AgentService implements OnModuleInit {
 
     // Save conversation memory after streaming
     try {
-      let memoryPayload: any = { output: result };
+      const memoryPayload: any = { output: result };
       if (
         typeof result === 'object' &&
         result !== null &&

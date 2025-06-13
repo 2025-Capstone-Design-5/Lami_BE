@@ -144,9 +144,7 @@ export class RoutesController {
           routeId: dto.detail.routeId,
           nodeId: dto.detail.nodeId,
           linkIds: Array.isArray(dto.detail.trafficItems)
-            ? (dto.detail.trafficItems as any[]).map(
-                (item) => item.linkId || '',
-              )
+            ? dto.detail.trafficItems.map((item) => item.linkId || '')
             : [],
           sectionIds: [],
         },
@@ -155,7 +153,7 @@ export class RoutesController {
         `[RoutesController] saveRoute successful: savedRouteId=${saved.id}`,
       );
       // Delegate wake-up time calculation to AlarmService
-      this.alarmService.registerAlarm(
+      await this.alarmService.registerAlarm(
         user.id,
         saved.arrivalTime.toISOString(),
         prepMinutes,

@@ -11,10 +11,11 @@ export class RealtimeArrivalPipelineChain extends BaseChain {
     return ['arrivalInfo'];
   }
 
-  async _call(values: any): Promise<any> {
-    const { fromAddress, toAddress } = values;
-    // TODO: Implement real-time arrival info logic, e.g., via a service call
-    throw new Error('RealtimeArrivalPipelineChain._call is not implemented');
+  _call(): Promise<any> {
+    // Placeholder logic: not implemented
+    return Promise.reject(
+      new Error('RealtimeArrivalPipelineChain._call is not implemented'),
+    );
   }
 
   _chainType(): string {

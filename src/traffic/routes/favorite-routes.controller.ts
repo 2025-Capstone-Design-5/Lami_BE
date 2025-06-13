@@ -48,7 +48,7 @@ export class FavoriteRoutesController {
       const [hourStr, minuteStr] = dto.wakeUpTime.split(':');
       const hour = parseInt(hourStr, 10);
       const minute = parseInt(minuteStr, 10);
-      let arrivalDate = new Date();
+      const arrivalDate = new Date();
       arrivalDate.setHours(hour, minute, 0, 0);
       // If the time has already passed today, schedule for tomorrow
       if (arrivalDate < new Date()) {

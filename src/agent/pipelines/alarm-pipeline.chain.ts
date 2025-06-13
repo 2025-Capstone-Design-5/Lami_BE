@@ -15,12 +15,10 @@ export class AlarmPipelineChain extends BaseChain {
     return ['confirmation'];
   }
 
-  async _call(values: any): Promise<any> {
+  _call(values: any): Promise<any> {
     const { time, message } = values;
-    // TODO: call NestJS AlarmService API via HTTP or injected service
-    // Example placeholder logic
     const confirmation = `알람이 ${time}에 '${message}' 메시지로 설정되었습니다.`;
-    return { confirmation };
+    return Promise.resolve({ confirmation });
   }
 
   _chainType(): string {

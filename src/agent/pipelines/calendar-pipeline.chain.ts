@@ -15,12 +15,10 @@ export class CalendarPipelineChain extends BaseChain {
     return ['confirmation'];
   }
 
-  async _call(values: any): Promise<any> {
+  _call(values: any): Promise<any> {
     const { date, eventDetails } = values;
-    // TODO: call NestJS CalendarService API via HTTP or injected service
-    // Example placeholder logic
     const confirmation = `일정이 ${date}에 '${eventDetails}'로 등록되었습니다.`;
-    return { confirmation };
+    return Promise.resolve({ confirmation });
   }
 
   _chainType(): string {

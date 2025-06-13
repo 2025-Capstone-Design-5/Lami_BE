@@ -11,10 +11,11 @@ export class RealtimeTrafficPipelineChain extends BaseChain {
     return ['trafficInfo'];
   }
 
-  async _call(values: any): Promise<any> {
-    const { fromAddress, toAddress } = values;
-    // TODO: Implement real-time traffic info logic, e.g., via a service call
-    throw new Error('RealtimeTrafficPipelineChain._call is not implemented');
+  _call(): Promise<any> {
+    // Placeholder logic: not implemented
+    return Promise.reject(
+      new Error('RealtimeTrafficPipelineChain._call is not implemented'),
+    );
   }
 
   _chainType(): string {
