@@ -64,7 +64,7 @@ export class RoutesController {
     if (dto.googleId) {
       try {
         user = await this.usersService.findByGoogleId(dto.googleId);
-      } catch (error) {
+      } catch {
         this.logger.warn(`User not found for googleId: ${dto.googleId}`);
       }
     }
