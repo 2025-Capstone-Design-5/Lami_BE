@@ -16,6 +16,7 @@ import { RouteDto } from './dto/route-info.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Route } from './entities/route.entity';
+import { SavedRoute } from './entities/saved-route.entity';
 
 import {
   OtpPlanResponse,
@@ -41,6 +42,8 @@ export class RoutesService {
     private readonly mapper: LinkMappingService,
     @InjectRepository(Route)
     private readonly routeRepo: Repository<Route>,
+    @InjectRepository(SavedRoute)
+    private readonly savedRouteRepo: Repository<SavedRoute>,
   ) {}
 
   /**
@@ -687,13 +690,14 @@ export class RoutesService {
    * 저장된 경로 상세 조회
    */
   async getRouteDetailById(routeId: string): Promise<Route> {
-    const route = await this.routeRepo.findOne({
+    // Look up the saved route record by its ID and return the nested Route entity
+    const saved = await this.savedRouteRepo.findOne({
       where: { id: routeId },
-      relations: ['realtimeParams'],
+      relations: ['route'],
     });
-    if (!route) {
-      throw new NotFoundException(`Route ${routeId} not found`);
+    if (!saved) {
+      throw new NotFoundException(`SavedRoute ${routeId} not found`);
     }
-    return route;
+    return saved.route;
   }
 }
