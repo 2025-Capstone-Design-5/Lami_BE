@@ -62,6 +62,10 @@ export class RouteSummaryDto {
 
   @IsString()
   routeId?: string;
+
+  // 사용자별 상태 정보 추가
+  isFavorite?: boolean;
+  hasAlarm?: boolean;
 }
 
 export class AllRoutesSummaryDataDto {
