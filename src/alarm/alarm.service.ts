@@ -15,6 +15,7 @@ export class AlarmService {
     userId: string,
     arrivalTimeISO: string,
     preparationTime: number,
+    savedRouteId?: string,
   ): Promise<Alarm> {
     // 서버에서 웨이크업 시간 계산
     const arrivalDate = new Date(arrivalTimeISO);
@@ -29,6 +30,7 @@ export class AlarmService {
       arrivalTime: arrivalDate,
       preparationTime,
       wakeUpTime: wakeUpDate,
+      ...(savedRouteId ? { savedRouteId } : {}),
     });
     return this.alarmRepo.save(alarm);
   }
@@ -43,5 +45,18 @@ export class AlarmService {
     const result = await this.alarmRepo.delete(id);
     // DeleteResult.affected can be null, treat null as 0
     return (result.affected ?? 0) > 0;
+  }
+
+  /**
+   * Remove all existing route-based alarms (linked to savedRoute) for a user.
+   */
+  async clearRouteAlarms(userId: string): Promise<void> {
+    await this.alarmRepo
+      .createQueryBuilder()
+      .delete()
+      .from(Alarm)
+      .where('userId = :userId AND savedRouteId IS NOT NULL', { userId })
+      .execute();
+    this.logger.log(`Cleared existing route-based alarms for user ${userId}`);
   }
 }

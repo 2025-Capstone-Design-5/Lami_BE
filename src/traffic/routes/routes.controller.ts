@@ -333,6 +333,8 @@ export class RoutesController {
 
       // 알람 추가
       if (dto.action === 'alarm' || dto.action === 'both') {
+        // Remove previous route-based alarms so only the new one remains
+        await this.alarmService.clearRouteAlarms(user.id);
         const arrivalDate = new Date(dto.arrivalTime);
         const prepMinutes = dto.preparationTime ?? 0;
 
@@ -356,10 +358,12 @@ export class RoutesController {
           },
         });
 
+        // Register alarm and link it to the savedRoute
         await this.alarmService.registerAlarm(
           user.id,
           saved.arrivalTime.toISOString(),
           prepMinutes,
+          saved.id,
         );
 
         result.savedRouteId = saved.id;
