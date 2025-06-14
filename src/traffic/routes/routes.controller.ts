@@ -14,6 +14,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SavedRoute } from './entities/saved-route.entity';
+import { FavoriteRoute } from './entities/favorite-route.entity';
 import { RoutesService } from './routes.service';
 import { RouteRequestDto } from './dto/route-request.dto';
 import {
@@ -44,6 +45,8 @@ export class RoutesController {
     private readonly routesService: RoutesService,
     @InjectRepository(SavedRoute)
     private readonly savedRouteRepo: Repository<SavedRoute>,
+    @InjectRepository(FavoriteRoute)
+    private readonly favoritesRepo: Repository<FavoriteRoute>,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly usersService: UsersService,
@@ -55,6 +58,17 @@ export class RoutesController {
     @Body() dto: RouteRequestDto,
   ): Promise<AllRoutesSummaryResponseDto> {
     this.logger.log(`getAllRoutes request received: ${JSON.stringify(dto)}`);
+
+    // 사용자 정보 확인 (옵셔널)
+    let user: any = null;
+    if (dto.googleId) {
+      try {
+        user = await this.usersService.findByGoogleId(dto.googleId);
+      } catch {
+        this.logger.warn(`User not found for googleId: ${dto.googleId}`);
+      }
+    }
+
     // 1) 모든 경로 raw 데이터 조회 (plan to arrive by specified time)
     const rawRoutes = await this.routesService.getAllRoutes(
       dto.fromAddress,
@@ -65,6 +79,7 @@ export class RoutesController {
         arriveBy: true,
       },
     );
+
     // 2) cache에 저장 (TTL 60초) - hash 기반 키
     const rawKey = `${dto.fromAddress}|${dto.toAddress}|${dto.date || ''}|${dto.time || ''}`;
     const hash = createHash('md5').update(rawKey).digest('hex');
@@ -74,11 +89,36 @@ export class RoutesController {
       `Caching rawRoutes with key: ${cacheKey}, rawKey: ${rawKey}`,
     );
     await this.cacheManager.set(cacheKey, rawRoutes, 500 * 1000);
+
+    // 사용자 즐겨찾기 및 알람 정보 조회 (사용자가 있는 경우에만)
+    let userFavorites: FavoriteRoute[] = [];
+    let userAlarms: any[] = [];
+
+    if (user && user.id) {
+      userFavorites = await this.favoritesRepo.find({
+        where: { userId: user.id },
+      });
+      userAlarms = await this.alarmService.getAlarms(user.id);
+    }
+
     // 3) summary DTO 생성
     const summaryRoutes: RouteSummaryDto[] = [];
     Object.entries(rawRoutes).forEach(([category, routeList]) => {
       (routeList as any[]).forEach((route) => {
         const main = route.main;
+
+        // 즐겨찾기 상태 확인
+        const isFavorite = user
+          ? userFavorites.some(
+              (fav) =>
+                fav.origin === dto.fromAddress &&
+                fav.destination === dto.toAddress,
+            )
+          : false;
+
+        // 알람 상태 확인 (간단히 해당 경로에 대한 알람이 있는지만 확인)
+        const hasAlarm = user ? userAlarms.length > 0 : false;
+
         summaryRoutes.push({
           category,
           duration: main.duration,
@@ -97,9 +137,12 @@ export class RoutesController {
           cityCode: main.cityCode,
           nodeId: main.nodeId,
           routeId: main.routeId,
+          isFavorite,
+          hasAlarm,
         });
       });
     });
+
     const responseData = plainToInstance(AllRoutesSummaryDataDto, {
       origin: dto.fromAddress,
       destination: dto.toAddress,
@@ -214,5 +257,115 @@ export class RoutesController {
       message: '상세 경로 조회 성공',
       data: selected,
     });
+  }
+
+  @Post('quick-action')
+  async quickAction(
+    @Body()
+    dto: {
+      googleId: string;
+      origin: string;
+      destination: string;
+      arrivalTime: string;
+      preparationTime?: number;
+      category?: string;
+      summary: Record<string, any>;
+      detail: Record<string, any>;
+      action: 'favorite' | 'alarm' | 'both';
+    },
+  ): Promise<{ message: string; favoriteId?: string; savedRouteId?: string }> {
+    this.logger.log(
+      `[RoutesController] quickAction dto: ${JSON.stringify(dto)}`,
+    );
+
+    try {
+      const user = await this.usersService.findByGoogleId(dto.googleId);
+      if (!user) {
+        throw new NotFoundException(
+          `User with googleId ${dto.googleId} not found`,
+        );
+      }
+
+      const result: {
+        message: string;
+        favoriteId?: string;
+        savedRouteId?: string;
+      } = {
+        message: '',
+      };
+
+      // 즐겨찾기 추가
+      if (dto.action === 'favorite' || dto.action === 'both') {
+        // 중복 확인
+        const existingFavorite = await this.favoritesRepo.findOne({
+          where: {
+            userId: user.id,
+            origin: dto.origin,
+            destination: dto.destination,
+          },
+        });
+
+        if (!existingFavorite) {
+          const favorite = await this.favoritesRepo.save({
+            userId: user.id,
+            origin: dto.origin,
+            destination: dto.destination,
+            category: dto.category ?? 'general',
+          });
+          result.favoriteId = favorite.id;
+        }
+      }
+
+      // 알람 추가
+      if (dto.action === 'alarm' || dto.action === 'both') {
+        const arrivalDate = new Date(dto.arrivalTime);
+        const prepMinutes = dto.preparationTime ?? 0;
+
+        const saved = await this.savedRouteRepo.save({
+          userId: user.id,
+          origin: dto.origin,
+          destination: dto.destination,
+          arrivalTime: arrivalDate,
+          preparationTime: prepMinutes,
+          category: dto.category ?? 'general',
+          route: {
+            summary: dto.summary,
+            detail: dto.detail,
+            cityCode: dto.detail.cityCode?.toString(),
+            routeId: dto.detail.routeId,
+            nodeId: dto.detail.nodeId,
+            linkIds: Array.isArray(dto.detail.trafficItems)
+              ? dto.detail.trafficItems.map((item) => item.linkId || '')
+              : [],
+            sectionIds: [],
+          },
+        });
+
+        await this.alarmService.registerAlarm(
+          user.id,
+          saved.arrivalTime.toISOString(),
+          prepMinutes,
+        );
+
+        result.savedRouteId = saved.id;
+      }
+
+      // 메시지 설정
+      if (dto.action === 'favorite') {
+        result.message = '즐겨찾기에 추가되었습니다.';
+      } else if (dto.action === 'alarm') {
+        result.message = '알람이 설정되었습니다.';
+      } else {
+        result.message = '즐겨찾기 및 알람이 설정되었습니다.';
+      }
+
+      this.logger.log(
+        `[RoutesController] quickAction successful: ${JSON.stringify(result)}`,
+      );
+      return result;
+    } catch (error) {
+      console.error('[RoutesController] quickAction error:', error);
+      throw error;
+    }
   }
 }

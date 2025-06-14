@@ -33,4 +33,11 @@ export class RouteRequestDto {
   @IsOptional()
   @IsString()
   time?: string;
+
+  /**
+   * 사용자 Google ID (즐겨찾기/알람 상태 확인용)
+   */
+  @IsOptional()
+  @IsString()
+  googleId?: string;
 }

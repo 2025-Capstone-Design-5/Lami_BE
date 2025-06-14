@@ -21,8 +21,7 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "moduleResolution": "node",
-    "typeRoots": ["src/@types", "node_modules/@types"]
+    "moduleResolution": "node"
   },
   "exclude": ["node_modules", "dist", "**/*.mjs"]
 }
