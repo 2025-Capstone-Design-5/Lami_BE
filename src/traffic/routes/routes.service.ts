@@ -143,6 +143,20 @@ export class RoutesService {
     toAddress: string,
     options?: { date?: string; time?: string; arriveBy?: boolean },
   ): Promise<RawRoutes> {
+    // 대중교통 조회 시간 조정: 새벽 시간대는 첫차 +30분으로 설정
+    const defaultFirstTime = '05:30:00';
+    const fallbackOffsetMinutes = 30;
+    let transitTimeForQuery = options?.time;
+    if (transitTimeForQuery != null && transitTimeForQuery < defaultFirstTime) {
+      const [fh, fm] = defaultFirstTime.split(':').map((s) => parseInt(s, 10));
+      const dt = new Date();
+      dt.setHours(fh, fm, 0, 0);
+      dt.setMinutes(dt.getMinutes() + fallbackOffsetMinutes);
+      transitTimeForQuery = dt.toTimeString().substring(0, 8);
+      this.logger.log(
+        `[getAllRoutes] Adjusting transit query time to ${transitTimeForQuery} (first train + ${fallbackOffsetMinutes}min)`,
+      );
+    }
     // 1) 순수 도보, 대중교통, 자동차 경로 병렬 조회
     const [walkPlan, transitPlan, carPlan] = await Promise.all([
       this.getOtpRoutes(fromAddress, toAddress, {
@@ -161,7 +175,7 @@ export class RoutesService {
         maxPreTransitTime: 1200,
         maxWalkDistance: 3000,
         date: options?.date,
-        time: options?.time,
+        time: transitTimeForQuery,
         arriveBy: options?.arriveBy,
       }),
       this.getOtpRoutes(fromAddress, toAddress, {
@@ -174,7 +188,6 @@ export class RoutesService {
       }),
     ]);
     const walkRoutes = walkPlan.itineraries;
-    // transitLeg 기반 필터링으로 대중교통 경로만 추출
     const transitRoutes = transitPlan.itineraries.filter((itin) =>
       (itin.legs ?? []).some((l) => l.transitLeg),
     );
