@@ -10,6 +10,7 @@ import {
   BadRequestException,
   Logger,
   NotFoundException,
+  Delete,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -195,11 +196,12 @@ export class RoutesController {
       this.logger.log(
         `[RoutesController] saveRoute successful: savedRouteId=${saved.id}`,
       );
-      // Delegate wake-up time calculation to AlarmService
+      // Delegate wake-up time calculation to AlarmService, linking to savedRoute
       await this.alarmService.registerAlarm(
         user.id,
         saved.arrivalTime.toISOString(),
         prepMinutes,
+        saved.id,
       );
       return { message: 'Route saved successfully', id: saved.id };
     } catch (error) {
@@ -384,5 +386,16 @@ export class RoutesController {
       console.error('[RoutesController] quickAction error:', error);
       throw error;
     }
+  }
+
+  @Delete('save/:id')
+  async deleteSavedRoute(
+    @Param('id') id: string,
+  ): Promise<{ deleted: boolean }> {
+    const result = await this.savedRouteRepo.delete(id);
+    if ((result.affected ?? 0) === 0) {
+      throw new NotFoundException(`Route with id ${id} not found`);
+    }
+    return { deleted: true };
   }
 }
