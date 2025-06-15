@@ -104,7 +104,6 @@ export class CalendarService {
   /** 외부에서 DB refresh_token을 주입 */
   public setRefreshToken(refreshToken: string): void {
     this.refreshToken = refreshToken;
-    // @ts-ignore: passing client_id and client_secret for refresh request
     (this.oAuth2Client as any).setCredentials({
       refresh_token: refreshToken,
       client_id: this.clientId,
