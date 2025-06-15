@@ -51,4 +51,9 @@ export class UsersService {
     user.tokenIssuedAt = issuedAt;
     return this.usersRepository.save(user);
   }
+
+  /** 사용자 ID로 조회 */
+  async findById(id: string): Promise<User | null> {
+    return this.usersRepository.findOne({ where: { id } });
+  }
 }

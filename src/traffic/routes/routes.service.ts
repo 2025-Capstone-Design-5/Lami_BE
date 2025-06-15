@@ -16,6 +16,7 @@ import { RouteDto } from './dto/route-info.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Route } from './entities/route.entity';
+import { SavedRoute } from './entities/saved-route.entity';
 
 import {
   OtpPlanResponse,
@@ -41,6 +42,8 @@ export class RoutesService {
     private readonly mapper: LinkMappingService,
     @InjectRepository(Route)
     private readonly routeRepo: Repository<Route>,
+    @InjectRepository(SavedRoute)
+    private readonly savedRouteRepo: Repository<SavedRoute>,
   ) {}
 
   /**
@@ -140,6 +143,20 @@ export class RoutesService {
     toAddress: string,
     options?: { date?: string; time?: string; arriveBy?: boolean },
   ): Promise<RawRoutes> {
+    // 대중교통 조회 시간 조정: 새벽 시간대는 첫차 +30분으로 설정
+    const defaultFirstTime = '05:30:00';
+    const fallbackOffsetMinutes = 30;
+    let transitTimeForQuery = options?.time;
+    if (transitTimeForQuery != null && transitTimeForQuery < defaultFirstTime) {
+      const [fh, fm] = defaultFirstTime.split(':').map((s) => parseInt(s, 10));
+      const dt = new Date();
+      dt.setHours(fh, fm, 0, 0);
+      dt.setMinutes(dt.getMinutes() + fallbackOffsetMinutes);
+      transitTimeForQuery = dt.toTimeString().substring(0, 8);
+      this.logger.log(
+        `[getAllRoutes] Adjusting transit query time to ${transitTimeForQuery} (first train + ${fallbackOffsetMinutes}min)`,
+      );
+    }
     // 1) 순수 도보, 대중교통, 자동차 경로 병렬 조회
     const [walkPlan, transitPlan, carPlan] = await Promise.all([
       this.getOtpRoutes(fromAddress, toAddress, {
@@ -158,7 +175,7 @@ export class RoutesService {
         maxPreTransitTime: 1200,
         maxWalkDistance: 3000,
         date: options?.date,
-        time: options?.time,
+        time: transitTimeForQuery,
         arriveBy: options?.arriveBy,
       }),
       this.getOtpRoutes(fromAddress, toAddress, {
@@ -171,7 +188,6 @@ export class RoutesService {
       }),
     ]);
     const walkRoutes = walkPlan.itineraries;
-    // transitLeg 기반 필터링으로 대중교통 경로만 추출
     const transitRoutes = transitPlan.itineraries.filter((itin) =>
       (itin.legs ?? []).some((l) => l.transitLeg),
     );
@@ -528,156 +544,12 @@ export class RoutesService {
     const bus_subway = await Promise.all(
       categories.bus_subway.map(mapItinToRoute),
     );
-    // ITS 정보 통합 (중복 호출 제거)
+    // ITS 로직을 제거하고, 해당 필드를 null로 처리합니다
     const allRoutes: RawRoutes = { walk, car, subway, bus, bus_subway };
-    // 1) Bounding Box 별 실시간 교통 호출 준비
-    const rtPromises = new Map<string, Promise<any>>();
-    // 2) 고유 섹션ID 별 예측정보 호출 준비
-    const fcSectionIds = new Set<string>();
-    // 라우트별 메타데이터 저장 (its.controller와 동일 logic 적용)
     for (const key of Object.keys(allRoutes) as (keyof RawRoutes)[]) {
       for (const route of allRoutes[key]) {
-        // 오직 transitLeg(버스/트램 포함) 경로만 처리
-        const transitSub = (route.sub || []).filter((s) => s.transitLeg);
-        if (transitSub.length === 0) continue;
-        // 경유 정류소 기반 bounding box 계산
-        const stopsCoords = transitSub.flatMap((s) => {
-          const inter: Array<any> = (s as any).intermediateStops ?? [];
-          return inter.length > 0
-            ? inter.map((i) => ({ lon: i.lon, lat: i.lat }))
-            : [{ lon: s.from.lon, lat: s.from.lat }];
-        });
-        const buffer = 0.001;
-        const lons = stopsCoords.map((c) => c.lon);
-        const lats = stopsCoords.map((c) => c.lat);
-        const minX = Math.min(...lons) - buffer;
-        const maxX = Math.max(...lons) + buffer;
-        const minY = Math.min(...lats) - buffer;
-        const maxY = Math.max(...lats) + buffer;
-        const bboxKey = `${minX}_${maxX}_${minY}_${maxY}`;
-        console.log(
-          `[getAllRoutes][ITS] Registering realtime call for bboxKey=${bboxKey}, params={minX:${minX},maxX:${maxX},minY:${minY},maxY:${maxY}}`,
-        );
-        (route as any)._bboxKey = bboxKey;
-        rtPromises.set(
-          bboxKey,
-          this.itsService.getRealtimeTrafficInfo({
-            type: 'all',
-            getType: 'json',
-            minX,
-            maxX,
-            minY,
-            maxY,
-          }),
-        );
-        // its.controller와 동일하게 globalLinkIdSet 사용
-        (route as any)._linkIdSet = globalLinkIdSet;
-        if ((route as any)._sectionId)
-          fcSectionIds.add((route as any)._sectionId);
-        // stopsCoords 매핑 로그
-        stopsCoords.forEach(({ lon, lat }, idx) => {
-          const sid = this.mapper.findLinkId(lon, lat);
-          console.log(
-            `[getAllRoutes][ITS] category=${key}, stopCoord[${idx}] lon:${lon}, lat:${lat} -> linkId:${sid}`,
-          );
-        });
-      }
-    }
-    // 실시간 교통정보 호출 실행 및 결과 수집 (parallel)
-    const rtResults = new Map<string, any[]>();
-    const rtEntries = Array.from(rtPromises.entries());
-    const rtResponses = await Promise.all(rtEntries.map(([, p]) => p));
-    rtResponses.forEach((rt, idx) => {
-      const key = rtEntries[idx][0];
-      const body = rt?.response?.body ?? rt?.body ?? rt;
-      const rawItems = body?.items?.item ?? body?.items ?? [];
-      const itemsArr = Array.isArray(rawItems)
-        ? rawItems
-        : rawItems
-          ? [rawItems]
-          : [];
-      rtResults.set(key, itemsArr);
-    });
-    // 예측정보 호출 준비 및 실행 (parallel)
-    const fCastDate = options?.date
-      ? options.date.replace(/-/g, '')
-      : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const fCastHour = options?.time
-      ? options.time
-      : new Date().getHours().toString().padStart(2, '0');
-    const fcEntries = Array.from(fcSectionIds).map(
-      (sec) =>
-        [
-          sec,
-          this.itsService.getForecastInfo({
-            sectionId: sec,
-            fCastDate,
-            fCastHour,
-            getType: 'json',
-          }),
-        ] as [string, Promise<any>],
-    );
-    const fcResults = new Map<string, any>();
-    const fcResponses = await Promise.all(fcEntries.map(([, p]) => p));
-    fcResponses.forEach((fc, idx) => {
-      const sec = fcEntries[idx][0];
-      const result = fc?.response?.body ?? fc?.body ?? fc;
-      fcResults.set(sec, result);
-    });
-    // 결과를 각 라우트에 할당
-    for (const key of Object.keys(allRoutes) as (keyof RawRoutes)[]) {
-      for (const route of allRoutes[key]) {
-        // linkIdSet이 없으면 ITS 로직 건너뛰고 기본값 설정
-        const linkIdSet = (route as any)._linkIdSet as Set<string> | undefined;
-        if (!linkIdSet) {
-          console.log(
-            '[getAllRoutes][ITS] No linkIdSet for route, skipping ITS for category',
-            key,
-          );
-          route.main.trafficItems = [0];
-          route.main.forecast = [0];
-          delete (route as any)._bboxKey;
-          delete (route as any)._sectionId;
-          delete (route as any)._linkIdSet;
-          continue;
-        }
-        const bboxKey = (route as any)._bboxKey;
-        const allItems = rtResults.get(bboxKey) ?? [];
-        // ITS 실시간 교통정보 filter 전 globalLinkIdSet 확인
-        console.log(
-          '[getAllRoutes][ITS] globalLinkIdSet:',
-          Array.from(linkIdSet),
-        );
-        const filteredItems = allItems.filter((item) =>
-          linkIdSet.has(item.linkId),
-        );
-        console.log(
-          '[getAllRoutes][ITS] filteredItems:',
-          filteredItems.map((it: any) => it.linkId),
-        );
-        if (filteredItems.length > 0) {
-          route.main.trafficItems = filteredItems;
-        } else if (allItems.length > 0) {
-          console.log(
-            '[getAllRoutes][ITS] No intersection, using all ITS items',
-          );
-          route.main.trafficItems = allItems;
-        } else {
-          route.main.trafficItems = [0];
-        }
-        const sec = (route as any)._sectionId;
-        // ITS 예측정보 filter 및 없으면 [0]로 대체
-        let forecastItems: any[] = [];
-        if (sec) {
-          const rawFc = fcResults.get(sec);
-          const itemsAny = rawFc?.items?.item ?? rawFc?.items ?? [];
-          const itemsArr = Array.isArray(itemsAny) ? itemsAny : [itemsAny];
-          forecastItems = itemsArr.filter((item) => linkIdSet.has(item.linkId));
-        }
-        route.main.forecast = forecastItems.length > 0 ? forecastItems : [0];
-        delete (route as any)._bboxKey;
-        delete (route as any)._sectionId;
-        delete (route as any)._linkIdSet;
+        (route.main as any).trafficItems = [];
+        (route.main as any).forecast = [];
       }
     }
     return allRoutes;
@@ -687,13 +559,14 @@ export class RoutesService {
    * 저장된 경로 상세 조회
    */
   async getRouteDetailById(routeId: string): Promise<Route> {
-    const route = await this.routeRepo.findOne({
+    // Look up the saved route record by its ID and return the nested Route entity
+    const saved = await this.savedRouteRepo.findOne({
       where: { id: routeId },
-      relations: ['realtimeParams'],
+      relations: ['route'],
     });
-    if (!route) {
-      throw new NotFoundException(`Route ${routeId} not found`);
+    if (!saved) {
+      throw new NotFoundException(`SavedRoute ${routeId} not found`);
     }
-    return route;
+    return saved.route;
   }
 }

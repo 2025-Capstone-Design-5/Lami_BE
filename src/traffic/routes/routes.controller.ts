@@ -10,6 +10,7 @@ import {
   BadRequestException,
   Logger,
   NotFoundException,
+  Delete,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -195,11 +196,12 @@ export class RoutesController {
       this.logger.log(
         `[RoutesController] saveRoute successful: savedRouteId=${saved.id}`,
       );
-      // Delegate wake-up time calculation to AlarmService
+      // Delegate wake-up time calculation to AlarmService, linking to savedRoute
       await this.alarmService.registerAlarm(
         user.id,
         saved.arrivalTime.toISOString(),
         prepMinutes,
+        saved.id,
       );
       return { message: 'Route saved successfully', id: saved.id };
     } catch (error) {
@@ -216,8 +218,17 @@ export class RoutesController {
   @UseInterceptors(CacheInterceptor)
   @CacheKey('route_details')
   @CacheTTL(30)
-  async getRouteDetails(@Param('routeId') routeId: string) {
-    return this.routesService.getRouteDetailById(routeId);
+  async getRouteDetails(
+    @Param('routeId') routeId: string,
+  ): Promise<RouteDetailResponseDto> {
+    // Fetch the stored route entity and return its detail JSON under 'data'
+    const route = await this.routesService.getRouteDetailById(routeId);
+    // route.detail contains the saved detail JSON (with main & sub)
+    return plainToInstance(RouteDetailResponseDto, {
+      status: HttpStatus.OK,
+      message: '상세 경로 조회 성공',
+      data: route.detail,
+    });
   }
 
   /**
@@ -305,7 +316,12 @@ export class RoutesController {
           },
         });
 
-        if (!existingFavorite) {
+        if (existingFavorite) {
+          // 이미 존재하면 삭제 (토글)
+          await this.favoritesRepo.remove(existingFavorite);
+          result.message = '즐겨찾기에서 제거되었습니다.';
+        } else {
+          // 존재하지 않으면 추가
           const favorite = await this.favoritesRepo.save({
             userId: user.id,
             origin: dto.origin,
@@ -313,11 +329,14 @@ export class RoutesController {
             category: dto.category ?? 'general',
           });
           result.favoriteId = favorite.id;
+          result.message = '즐겨찾기에 추가되었습니다.';
         }
       }
 
       // 알람 추가
       if (dto.action === 'alarm' || dto.action === 'both') {
+        // Remove previous route-based alarms so only the new one remains
+        await this.alarmService.clearRouteAlarms(user.id);
         const arrivalDate = new Date(dto.arrivalTime);
         const prepMinutes = dto.preparationTime ?? 0;
 
@@ -341,21 +360,21 @@ export class RoutesController {
           },
         });
 
+        // Register alarm and link it to the savedRoute
         await this.alarmService.registerAlarm(
           user.id,
           saved.arrivalTime.toISOString(),
           prepMinutes,
+          saved.id,
         );
 
         result.savedRouteId = saved.id;
       }
 
       // 메시지 설정
-      if (dto.action === 'favorite') {
-        result.message = '즐겨찾기에 추가되었습니다.';
-      } else if (dto.action === 'alarm') {
+      if (dto.action === 'alarm') {
         result.message = '알람이 설정되었습니다.';
-      } else {
+      } else if (dto.action === 'both') {
         result.message = '즐겨찾기 및 알람이 설정되었습니다.';
       }
 
@@ -367,5 +386,16 @@ export class RoutesController {
       console.error('[RoutesController] quickAction error:', error);
       throw error;
     }
+  }
+
+  @Delete('save/:id')
+  async deleteSavedRoute(
+    @Param('id') id: string,
+  ): Promise<{ deleted: boolean }> {
+    const result = await this.savedRouteRepo.delete(id);
+    if ((result.affected ?? 0) === 0) {
+      throw new NotFoundException(`Route with id ${id} not found`);
+    }
+    return { deleted: true };
   }
 }
