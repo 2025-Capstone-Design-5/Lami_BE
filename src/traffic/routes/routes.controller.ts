@@ -38,10 +38,16 @@ import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from '@/users/users.service';
 import { AlarmService } from '@/alarm/alarm.service';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
+import { GraphqlPlanRequestDto } from './dto/graphql-plan-request.dto';
+import { TmapService } from '../tmap/tmap.service';
 
 @Controller('traffic/routes')
 export class RoutesController {
   private readonly logger = new Logger(RoutesController.name);
+  private readonly otpGraphqlEndpoint =
+    'http://localhost:8080/otp/routers/default/index/graphql';
   constructor(
     private readonly routesService: RoutesService,
     @InjectRepository(SavedRoute)
@@ -52,6 +58,8 @@ export class RoutesController {
     private readonly cacheManager: Cache,
     private readonly usersService: UsersService,
     private readonly alarmService: AlarmService,
+    private readonly httpService: HttpService,
+    private readonly tmapService: TmapService,
   ) {}
 
   @Post()
@@ -397,5 +405,118 @@ export class RoutesController {
       throw new NotFoundException(`Route with id ${id} not found`);
     }
     return { deleted: true };
+  }
+
+  @Post('graphql/plan')
+  async otpGraphqlPlan(@Body() dto: GraphqlPlanRequestDto): Promise<any> {
+    this.logger.log(
+      `OTP GraphQL plan request received: ${JSON.stringify(dto)}`,
+    );
+    // 1) Geocode origin and destination addresses
+    const fromGeo = await this.tmapService.geocode(dto.fromAddress);
+    const toGeo = await this.tmapService.geocode(dto.toAddress);
+    const fromLat = parseFloat(fromGeo.coordinateInfo.lat);
+    const fromLon = parseFloat(fromGeo.coordinateInfo.lon);
+    const toLat = parseFloat(toGeo.coordinateInfo.lat);
+    const toLon = parseFloat(toGeo.coordinateInfo.lon);
+
+    // 2) Build optional parameters with defaults
+    const modes = dto.modes ?? {
+      streetModes: ['WALK', 'CAR'],
+      transitModes: ['BUS', 'SUBWAY'],
+    };
+    const maxWalkDistance = dto.maxWalkDistance ?? 2000;
+    const maxPreTransitTime = dto.maxPreTransitTime ?? 600;
+    const maximumTransfers = dto.maximumTransfers ?? 4;
+    const numItineraries = dto.numItineraries ?? 4;
+    const walkReluctance = dto.walkReluctance ?? 2.0;
+    const waitReluctance = dto.waitReluctance ?? 1.0;
+    const transferPenalty = dto.transferPenalty ?? 180;
+    const transferSlack = dto.transferSlack ?? 120;
+
+    // 3) Construct GraphQL query
+    const query = `query PlanTrip(
+      $fromLat: Float!, $fromLon: Float!, $toLat: Float!, $toLon: Float!,
+      $date: String!, $time: String!,
+      $modes: ModesInput!,
+      $maxWalkDistance: Int!,
+      $maxPreTransitTime: Int!,
+      $maximumTransfers: Int!,
+      $numItineraries: Int!,
+      $walkReluctance: Float!,
+      $waitReluctance: Float!,
+      $transferPenalty: Int!,
+      $transferSlack: Int!
+    ) {
+      plan(
+        from: {lat: $fromLat, lon: $fromLon},
+        to:   {lat: $toLat,   lon: $toLon},
+        date: $date,
+        time: $time,
+        modes: $modes,
+        maxWalkDistance: $maxWalkDistance,
+        maxPreTransitTime: $maxPreTransitTime,
+        maximumTransfers: $maximumTransfers,
+        numItineraries: $numItineraries,
+        walkReluctance: $walkReluctance,
+        waitReluctance: $waitReluctance,
+        transferPenalty: $transferPenalty,
+        transferSlack: $transferSlack
+      ) {
+        itineraries {
+          duration
+          generalizedCost
+          walkedDistance
+          transferCount
+          elevationGained
+          legs {
+            mode
+            startTime
+            endTime
+            distance
+            duration
+            realTime
+            from { name quay { id } }
+            to   { name quay { id } }
+            line { id name publicCode presentation { colour } }
+            pointsOnLink { points }
+          }
+        }
+      }
+    }`;
+
+    // 4) Set variables
+    const variables = {
+      fromLat,
+      fromLon,
+      toLat,
+      toLon,
+      date: dto.date,
+      time: dto.time,
+      modes,
+      maxWalkDistance,
+      maxPreTransitTime,
+      maximumTransfers,
+      numItineraries,
+      walkReluctance,
+      waitReluctance,
+      transferPenalty,
+      transferSlack,
+    };
+
+    // 5) Send request to OTP GraphQL
+    const response = await firstValueFrom(
+      this.httpService.post(
+        this.otpGraphqlEndpoint,
+        { query, variables },
+        { headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    if (response.data.errors) {
+      throw new BadRequestException(response.data.errors);
+    }
+
+    // 6) Return itineraries array
+    return response.data.data.plan.itineraries;
   }
 }

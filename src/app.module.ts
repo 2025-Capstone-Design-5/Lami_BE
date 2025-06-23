@@ -14,6 +14,8 @@ import { CalendarModule } from './calendar/calendar.module';
 // import { VoiceModule } from './voice/voice.module';
 import { AlarmModule } from './alarm/alarm.module';
 // import { ChatModule } from './chat/chat.module';
+const otpConfig = require('../otp-config.json');
+import { GraphqlProxyModule } from './traffic/graphql/graphql.module';
 @Module({
   imports: [
     CacheModule.register({
@@ -47,7 +49,8 @@ import { AlarmModule } from './alarm/alarm.module';
     // AlertsModule,
     UsersModule,
     AuthModule,
-    // AiAgentModule,
+    // Simplified GraphQL proxy endpoints for GTFS & Transmodel
+    GraphqlProxyModule,
   ],
   controllers: [AppController],
   providers: [AppService],

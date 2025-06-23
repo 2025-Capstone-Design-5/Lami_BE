@@ -1,0 +1,6 @@
+{
+  "otpFeatures": {
+    "gtfsGraphQlApi": true,
+    "transmodelGraphQlApi": true
+  }
+}
